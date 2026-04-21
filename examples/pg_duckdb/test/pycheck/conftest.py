@@ -122,5 +122,3 @@ def cur(pg):
 def conn(pg):
     with pg.conn() as conn:
         yield conn
-
-

@@ -17,6 +17,11 @@ public:
 	PostgresCatalog(duckdb::AttachedDatabase &db, const duckdb::string &connection_string,
 	                const PostgresStorageOptions &options, const TypeResolver *resolver);
 
+	// Not copyable: we hold a non-owning TypeResolver pointer + a map of
+	// unique_ptr-owned schemas.
+	PostgresCatalog(const PostgresCatalog &) = delete;
+	PostgresCatalog &operator=(const PostgresCatalog &) = delete;
+
 	static duckdb::unique_ptr<duckdb::Catalog> Attach(duckdb::optional_ptr<duckdb::StorageExtensionInfo>,
 	                                                  duckdb::ClientContext &, duckdb::AttachedDatabase &db,
 	                                                  const duckdb::string &, duckdb::AttachInfo &info,

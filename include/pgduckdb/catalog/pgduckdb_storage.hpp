@@ -34,8 +34,15 @@ struct PostgresStorageOptions {
  * database -- in practice ext stores it as a `const` global.
  */
 struct PostgresStorageInfo : public duckdb::StorageExtensionInfo {
+	PostgresStorageInfo() : options(), resolver(nullptr) {
+	}
+
+	// Not copyable: non-owning TypeResolver pointer.
+	PostgresStorageInfo(const PostgresStorageInfo &) = delete;
+	PostgresStorageInfo &operator=(const PostgresStorageInfo &) = delete;
+
 	PostgresStorageOptions options;
-	const TypeResolver *resolver = nullptr;
+	const TypeResolver *resolver;
 };
 
 class PostgresStorageExtension : public duckdb::StorageExtension {

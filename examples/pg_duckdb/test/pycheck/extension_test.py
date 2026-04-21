@@ -49,4 +49,3 @@ def test_autoinstall_known_extensions(pg: Postgres, cur: Cursor):
     assert cur.sql(
         "SELECT * FROM duckdb.query($$ FROM duckdb_extensions() SELECT installed, loaded WHERE extension_name = 'prql' $$)"
     ) == (True, True)
-

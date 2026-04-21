@@ -517,24 +517,6 @@ ConvertUUIDDatum(const duckdb::Value &value) {
 	return UUIDPGetDatum(postgres_uuid);
 }
 
-inline Datum
-ConvertDuckStructDatum(const duckdb::Value &value) {
-	D_ASSERT(value.type().id() == duckdb::LogicalTypeId::STRUCT);
-	return ConvertToStringDatum(value);
-}
-
-static Datum
-ConvertUnionDatum(const duckdb::Value &value) {
-	D_ASSERT(value.type().id() == duckdb::LogicalTypeId::UNION);
-	return ConvertToStringDatum(value);
-}
-
-static Datum
-ConvertMapDatum(const duckdb::Value &value) {
-	D_ASSERT(value.type().id() == duckdb::LogicalTypeId::MAP);
-	return ConvertToStringDatum(value);
-}
-
 static duckdb::interval_t
 DatumGetInterval(Datum value) {
 	Interval *pg_interval = DatumGetIntervalP(value);
