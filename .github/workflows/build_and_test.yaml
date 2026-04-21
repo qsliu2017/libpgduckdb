@@ -16,7 +16,7 @@ jobs:
     name: "Linting and formatting"
 
     steps:
-      - name: Checkout pg_duckdb extension code
+      - name: Checkout
         uses: actions/checkout@v4
       - name: Fetch main branch
         run: git fetch --depth=1 origin +main:refs/remotes/origin/main
@@ -25,16 +25,23 @@ jobs:
           python-version: "3.11"
 
       - name: Install clang-format and ruff
-        run: python3 -m pip install -r dev_requirements.txt
+        run: python3 -m pip install -r examples/pg_duckdb/dev_requirements.txt
       - name: Run clang-format
-        run: find src include -iname '*.hpp' -o -iname '*.h' -o -iname '*.cpp' -o -iname '*.c' | xargs git clang-format --diff origin/main
+        # Covers both lib (src/, include/ at repo root) and example extensions
+        # (examples/*/src, examples/*/include).
+        run: |
+          find src include examples/*/src examples/*/include \
+            \( -iname '*.hpp' -o -iname '*.h' -o -iname '*.cpp' -o -iname '*.c' \) \
+            2>/dev/null | xargs git clang-format --diff origin/main
       - name: Run ruff check
+        working-directory: examples/pg_duckdb
         run: ruff check --output-format=github .
       - name: Run ruff format
+        working-directory: examples/pg_duckdb
         run: ruff format --diff
 
-  build-and-test:
-    name: "Build and test"
+  pg_duckdb:
+    name: "Build and test examples/pg_duckdb"
     strategy:
       fail-fast: false
       matrix:
@@ -59,7 +66,7 @@ jobs:
 
     steps:
       - name: Test details
-        run: echo Build and test pg_duckdb with PostgreSQL ${{ matrix.version }} branch
+        run: echo Build and test examples/pg_duckdb with PostgreSQL ${{ matrix.version }} branch
 
       - name: Install build deps
         run: |
@@ -76,7 +83,7 @@ jobs:
           key: ubuntu-24.04-${{ matrix.version }}
           create-symlink: true
 
-      - name: Checkout pg_duckdb extension code
+      - name: Checkout pg_duckdb code
         uses: actions/checkout@v4
         with:
           submodules: "recursive"
@@ -126,29 +133,57 @@ jobs:
           key: duckdb-build-ubuntu-24.04-${{ steps.versions.outputs.duckdb_sha }}-ninja
 
       - name: Install pytest and other test requirements
-        run: python3 -m pip install -r duckdb/requirements.txt
+        run: python3 -m pip install -r duckdb/examples/pg_duckdb/requirements.txt
 
-      - name: Build pg_duckdb extension
+      - name: Build and install pg_duckdb
         id: build
-        working-directory: duckdb
+        working-directory: duckdb/examples/pg_duckdb
         run: ERROR_ON_WARNING=1 make -j8 install DUCKDB_BUILD=${{ matrix.type }}
 
       - name: Run make installcheck
         id: installcheck
-        working-directory: duckdb
+        working-directory: duckdb/examples/pg_duckdb
         run: make installcheck DUCKDB_BUILD=${{ matrix.type }}
 
       - name: Run make pycheck
         id: pycheck
-        working-directory: duckdb
+        working-directory: duckdb/examples/pg_duckdb
         run: make pycheck DUCKDB_BUILD=${{ matrix.type }}
 
       - name: Print regression.diffs if regression tests failed
         if: failure() && steps.installcheck.outcome == 'failure'
-        # Always "fail" this task by adding "&& false", so that rits output
+        # Always "fail" this task by adding "&& false", so that its output
         # gets expanded in the github UI.
-        run: cat duckdb/test/regression/regression.diffs && false
+        run: cat duckdb/examples/pg_duckdb/test/regression/regression.diffs && false
 
       - name: Print postmaster.log if regression tests failed
         if: failure() && steps.installcheck.outcome == 'failure'
-        run: cat duckdb/test/regression/log/postmaster.log
+        run: cat duckdb/examples/pg_duckdb/test/regression/log/postmaster.log
+
+  pg_parquet:
+    name: "Build examples/pg_parquet (stub)"
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # TODO: wire this up once examples/pg_parquet/ is a working consumer of
+      # libpgduckdb_core.a. Intended shape (for future editor):
+      #
+      #   - install build deps (subset of pg_duckdb's -- no pytest needed)
+      #   - checkout + build PG 18 (cached)
+      #   - build libpgduckdb_core.a at repo root
+      #   - make -C examples/pg_parquet install
+      #   - run the smoke test that proves the example loads and calls
+      #     parquet.read() against a sample file
+      #
+      # For now this job just asserts that the placeholder directory hasn't
+      # quietly accumulated half-done state.
+      - name: Placeholder (examples/pg_parquet not yet wired)
+        run: |
+          if [ -d examples/pg_parquet ]; then
+            echo "examples/pg_parquet exists but CI is still a stub -- flesh out this job."
+            exit 1
+          fi
+          echo "ok: examples/pg_parquet not present yet; nothing to build."
