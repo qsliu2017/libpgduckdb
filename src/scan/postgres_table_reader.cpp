@@ -1,7 +1,7 @@
 #include "pgduckdb/scan/postgres_table_reader.hpp"
 #include "pgduckdb/pgduckdb_process_lock.hpp"
 #include "pgduckdb/pgduckdb_utils.hpp"
-#include "pgduckdb/pgduckdb_guc.hpp"
+#include "pgduckdb/hooks.hpp"
 
 extern "C" {
 #include "postgres.h"
@@ -80,7 +80,7 @@ PostgresTableReader::InitUnsafe(const char *table_scan_query, bool count_tuples_
 		InitRunWithParallelScan(planned_stmt, count_tuples_only);
 	}
 
-	if (duckdb_log_pg_explain) {
+	if (pgduckdb::hooks::log_pg_explain()) {
 		ExplainState *es = (ExplainState *)palloc0(sizeof(ExplainState));
 		es->str = makeStringInfo();
 		es->format = EXPLAIN_FORMAT_TEXT;
@@ -207,14 +207,15 @@ int
 PostgresTableReader::ParallelWorkerNumber(Cardinality cardinality) {
 	static const int cardinality_threshold = 1 << 16;
 	/* No parallel worker scan wanted */
-	if (!duckdb_max_workers_per_postgres_scan) {
+	const int max_workers_cap = pgduckdb::hooks::max_workers_per_postgres_scan();
+	if (!max_workers_cap) {
 		return 0;
 	}
 	/* Use only one worker when scan is done on low cardinality */
 	if (cardinality <= cardinality_threshold) {
 		return 1;
 	}
-	return std::min(duckdb_max_workers_per_postgres_scan, max_parallel_workers);
+	return std::min(max_workers_cap, max_parallel_workers);
 }
 
 bool

@@ -14,7 +14,7 @@
 #include "pgduckdb/pgduckdb_utils.hpp"
 #include "pgduckdb/pg/memory.hpp"
 #include "pgduckdb/pg/relations.hpp"
-#include "pgduckdb/pgduckdb_guc.hpp"
+#include "pgduckdb/hooks.hpp"
 
 #include "pgduckdb/pgduckdb_process_lock.hpp"
 #include "pgduckdb/logger.hpp"
@@ -438,7 +438,7 @@ PostgresScanGlobalState::PostgresScanGlobalState(Snapshot _snapshot, Relation _r
 	//   - The table_reader does not launch any parallel Postgres workers, indicating a small scan that executes in the
 	//     current process.
 	if (table_reader_global_state->NumWorkersLaunched() > 0 && !count_tuples_only) {
-		max_threads = duckdb_threads_for_postgres_scan;
+		max_threads = pgduckdb::hooks::threads_for_postgres_scan();
 	}
 
 	pd_log(DEBUG1, "(DuckDB/PostgresSeqScanGlobalState) Running %" PRIu64 " threads: '%s'", (uint64_t)MaxThreads(),

@@ -5,11 +5,9 @@
 #include "duckdb/common/types/blob.hpp"
 #include "duckdb/common/types/uuid.hpp"
 
-#include "pgduckdb/pgduckdb_guc.hpp"
+#include "pgduckdb/hooks.hpp"
 #include "pgduckdb/pgduckdb_types.hpp"
-#include "pgduckdb/pgduckdb_metadata_cache.hpp"
 #include "pgduckdb/pgduckdb_utils.hpp"
-#include "pgduckdb/pgduckdb_metadata_cache.hpp"
 #include "pgduckdb/scan/postgres_scan.hpp"
 #include "pgduckdb/pg/memory.hpp"
 #include "pgduckdb/pg/types.hpp"
@@ -873,7 +871,7 @@ struct StructArray {
 public:
 	static ArrayType *
 	ConstructArray(Datum *datums, bool *nulls, int ndims, int *dims, int *lower_bound) {
-		return construct_md_array(datums, nulls, ndims, dims, lower_bound, pgduckdb::DuckdbStructOid(), -1, false, 'i');
+		return construct_md_array(datums, nulls, ndims, dims, lower_bound, pgduckdb::hooks::duckdb_struct_oid(), -1, false, 'i');
 	}
 
 	static Datum
@@ -886,7 +884,7 @@ struct UnionArray {
 public:
 	static ArrayType *
 	ConstructArray(Datum *datums, bool *nulls, int ndims, int *dims, int *lower_bound) {
-		return construct_md_array(datums, nulls, ndims, dims, lower_bound, pgduckdb::DuckdbUnionOid(), -1, false, 'i');
+		return construct_md_array(datums, nulls, ndims, dims, lower_bound, pgduckdb::hooks::duckdb_union_oid(), -1, false, 'i');
 	}
 
 	static Datum
@@ -899,7 +897,7 @@ struct MapArray {
 public:
 	static ArrayType *
 	ConstructArray(Datum *datums, bool *nulls, int ndims, int *dims, int *lower_bound) {
-		return construct_md_array(datums, nulls, ndims, dims, lower_bound, pgduckdb::DuckdbMapOid(), -1, false, 'i');
+		return construct_md_array(datums, nulls, ndims, dims, lower_bound, pgduckdb::hooks::duckdb_map_oid(), -1, false, 'i');
 	}
 
 	static Datum
@@ -1248,22 +1246,22 @@ ConvertDuckToPostgresValue(TupleTableSlot *slot, duckdb::Value &value, idx_t col
 		// Since oids of the following types calculated at runtime, it is not
 		// possible to compile the code while placing it as a separate case
 		// in the switch-case clause above.
-		if (oid == pgduckdb::DuckdbStructOid()) {
+		if (oid == pgduckdb::hooks::duckdb_struct_oid()) {
 			slot->tts_values[col] = ConvertDuckStructDatum(value);
 			return true;
-		} else if (oid == pgduckdb::DuckdbUnionOid()) {
+		} else if (oid == pgduckdb::hooks::duckdb_union_oid()) {
 			slot->tts_values[col] = ConvertUnionDatum(value);
 			return true;
-		} else if (oid == pgduckdb::DuckdbMapOid()) {
+		} else if (oid == pgduckdb::hooks::duckdb_map_oid()) {
 			slot->tts_values[col] = ConvertMapDatum(value);
 			return true;
-		} else if (oid == pgduckdb::DuckdbStructArrayOid()) {
+		} else if (oid == pgduckdb::hooks::duckdb_struct_array_oid()) {
 			ConvertDuckToPostgresArray<StructArray>(slot, value, col);
 			return true;
-		} else if (oid == pgduckdb::DuckdbUnionArrayOid()) {
+		} else if (oid == pgduckdb::hooks::duckdb_union_array_oid()) {
 			ConvertDuckToPostgresArray<UnionArray>(slot, value, col);
 			return true;
-		} else if (oid == pgduckdb::DuckdbMapArrayOid()) {
+		} else if (oid == pgduckdb::hooks::duckdb_map_array_oid()) {
 			ConvertDuckToPostgresArray<MapArray>(slot, value, col);
 			return true;
 		}
@@ -1356,7 +1354,7 @@ ConvertPostgresToBaseDuckColumnType(Form_pg_attribute &attribute) {
 		 * https://duckdb.org/docs/stable/sql/data_types/numeric.html#fixed-point-decimals
 		 */
 		if (type_modifier == -1 || precision < 1 || precision > 38 || scale < 0 || scale > 38 || scale > precision) {
-			if (duckdb_convert_unsupported_numeric_to_double) {
+			if (pgduckdb::hooks::convert_unsupported_numeric_to_double()) {
 				auto extra_type_info = duckdb::make_shared_ptr<NumericAsDouble>();
 				return duckdb::LogicalType(duckdb::LogicalTypeId::DOUBLE, std::move(extra_type_info));
 			}
@@ -1399,17 +1397,17 @@ ConvertPostgresToBaseDuckColumnType(Form_pg_attribute &attribute) {
 	case BYTEAARRAYOID:
 		return duckdb::LogicalTypeId::BLOB;
 	default:
-		if (typoid == pgduckdb::DuckdbUnionOid()) {
+		if (typoid == pgduckdb::hooks::duckdb_union_oid()) {
 			return duckdb::LogicalTypeId::UNION;
-		} else if (typoid == pgduckdb::DuckdbStructOid()) {
+		} else if (typoid == pgduckdb::hooks::duckdb_struct_oid()) {
 			return duckdb::LogicalTypeId::STRUCT;
-		} else if (typoid == pgduckdb::DuckdbMapOid()) {
+		} else if (typoid == pgduckdb::hooks::duckdb_map_oid()) {
 			return duckdb::LogicalTypeId::MAP;
-		} else if (typoid == pgduckdb::DuckdbUnionArrayOid()) {
+		} else if (typoid == pgduckdb::hooks::duckdb_union_array_oid()) {
 			return duckdb::LogicalTypeId::UNION;
-		} else if (typoid == pgduckdb::DuckdbStructArrayOid()) {
+		} else if (typoid == pgduckdb::hooks::duckdb_struct_array_oid()) {
 			return duckdb::LogicalTypeId::STRUCT;
-		} else if (typoid == pgduckdb::DuckdbMapArrayOid()) {
+		} else if (typoid == pgduckdb::hooks::duckdb_map_array_oid()) {
 			return duckdb::LogicalTypeId::MAP;
 		}
 		return CreateUnsupportedPostgresType("Oid=" + std::to_string(attribute->atttypid));
@@ -1509,11 +1507,11 @@ GetPostgresArrayDuckDBType(const duckdb::LogicalType &type, bool throw_error) {
 	case duckdb::LogicalTypeId::BIGNUM:
 		return NUMERICARRAYOID;
 	case duckdb::LogicalTypeId::STRUCT:
-		return pgduckdb::DuckdbStructArrayOid();
+		return pgduckdb::hooks::duckdb_struct_array_oid();
 	case duckdb::LogicalTypeId::UNION:
-		return pgduckdb::DuckdbUnionArrayOid();
+		return pgduckdb::hooks::duckdb_union_array_oid();
 	case duckdb::LogicalTypeId::MAP:
-		return pgduckdb::DuckdbMapArrayOid();
+		return pgduckdb::hooks::duckdb_map_array_oid();
 	default: {
 		if (throw_error) {
 			throw duckdb::NotImplementedException("Unsupported DuckDB `LIST` subtype: " + type.ToString());
@@ -1597,7 +1595,7 @@ GetPostgresDuckDBType(const duckdb::LogicalType &type, bool throw_error) {
 	case duckdb::LogicalTypeId::BIGNUM:
 		return NUMERICOID;
 	case duckdb::LogicalTypeId::STRUCT:
-		return pgduckdb::DuckdbStructOid();
+		return pgduckdb::hooks::duckdb_struct_oid();
 	case duckdb::LogicalTypeId::LIST:
 	case duckdb::LogicalTypeId::ARRAY: {
 		const duckdb::LogicalType *duck_type = &type;
@@ -1610,9 +1608,9 @@ GetPostgresDuckDBType(const duckdb::LogicalType &type, bool throw_error) {
 	case duckdb::LogicalTypeId::BLOB:
 		return BYTEAOID;
 	case duckdb::LogicalTypeId::UNION:
-		return pgduckdb::DuckdbUnionOid();
+		return pgduckdb::hooks::duckdb_union_oid();
 	case duckdb::LogicalTypeId::MAP:
-		return pgduckdb::DuckdbMapOid();
+		return pgduckdb::hooks::duckdb_map_oid();
 	case duckdb::LogicalTypeId::ENUM:
 		return VARCHAROID;
 	default: {

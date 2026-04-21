@@ -32,6 +32,7 @@ _PG_init(void) {
 		                errhint("Add pg_duckdb to shared_preload_libraries.")));
 	}
 
+	pgduckdb::RegisterLibHooks();
 	pgduckdb::InitGUC();
 	pgduckdb::InitGUCHooks();
 	DuckdbInitHooks();
