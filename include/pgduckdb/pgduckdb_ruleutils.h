@@ -149,4 +149,29 @@ extern bool is_bernoulli_sampling(const char *tsm_name, int num_args);
 
 #ifdef __cplusplus
 } /* extern "C" */
-#endif
+
+namespace pgduckdb {
+
+/*
+ * RAII helper for ext code that calls a dispatcher (pgduckdb_relation_name,
+ * pgduckdb_db_and_schema_string, etc.) outside of pgduckdb_get_querydef /
+ * pgduckdb_deparse_with_routine -- e.g. DDL paths that only need one or two
+ * resolved names. Scopes the active DeparseRoutine for the lifetime of the
+ * guard, restoring the previous one in its destructor. Exception-safe.
+ *
+ *     pgduckdb::ScopedDeparseRoutine scope(&my_routine);
+ *     auto name = pgduckdb_relation_name(relid);   // resolves via my_routine
+ */
+class ScopedDeparseRoutine {
+public:
+	explicit ScopedDeparseRoutine(const DeparseRoutine *routine);
+	~ScopedDeparseRoutine();
+	ScopedDeparseRoutine(const ScopedDeparseRoutine &) = delete;
+	ScopedDeparseRoutine &operator=(const ScopedDeparseRoutine &) = delete;
+
+private:
+	const DeparseRoutine *saved_;
+};
+
+} // namespace pgduckdb
+#endif /* __cplusplus */

@@ -58,6 +58,7 @@ AppendCreateRelationCopyString(StringInfo info, ParseState *pstate, CopyStmt *co
 
 	table_close(rel, AccessShareLock);
 
+	pgduckdb::ScopedDeparseRoutine scope(&pgduckdb::pg_duckdb_deparse_routine);
 	appendStringInfoString(info, pgduckdb_relation_name(relid));
 	if (!copy_stmt->attlist) {
 		return;

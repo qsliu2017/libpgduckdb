@@ -642,6 +642,7 @@ DuckdbInitUtilityHook() {
  */
 void
 DuckdbTruncateTable(Oid relation_oid) {
+	pgduckdb::ScopedDeparseRoutine scope(&pgduckdb::pg_duckdb_deparse_routine);
 	auto name = PostgresFunctionGuard(pgduckdb_relation_name, relation_oid);
 	pgduckdb::DuckDBQueryOrThrow(std::string("TRUNCATE ") + name);
 }
@@ -803,6 +804,7 @@ DECLARE_PG_FUNCTION(duckdb_create_table_trigger) {
 
 	pgduckdb::DuckDBQueryOrThrow(*connection, create_table_string);
 	if (ctas_query) {
+		pgduckdb::ScopedDeparseRoutine scope(&pgduckdb::pg_duckdb_deparse_routine);
 		const char *ctas_query_string = pgduckdb_get_querydef(ctas_query, &pgduckdb::pg_duckdb_deparse_routine);
 
 		std::string insert_string =

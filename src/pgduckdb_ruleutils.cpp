@@ -487,3 +487,16 @@ pg_duckdb_get_oper_expr_suffix(StringInfo buf, void *vctx) {
 }
 
 } /* extern "C" */
+
+namespace pgduckdb {
+
+ScopedDeparseRoutine::ScopedDeparseRoutine(const DeparseRoutine *routine)
+    : saved_(current_routine) {
+	current_routine = routine ? routine : &PGDUCKDB_DEFAULT_DEPARSE_ROUTINE;
+}
+
+ScopedDeparseRoutine::~ScopedDeparseRoutine() {
+	current_routine = saved_;
+}
+
+} // namespace pgduckdb
