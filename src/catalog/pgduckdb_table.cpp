@@ -31,14 +31,14 @@ PostgresTable::OpenRelation(Oid relid) {
 }
 
 void
-PostgresTable::SetTableInfo(duckdb::CreateTableInfo &info, Relation rel) {
+PostgresTable::SetTableInfo(duckdb::CreateTableInfo &info, Relation rel, const TypeResolver *resolver) {
 	auto tupleDesc = RelationGetDescr(rel);
 
 	const auto n = GetTupleDescNatts(tupleDesc);
 	for (int i = 0; i < n; ++i) {
 		Form_pg_attribute attr = GetAttr(tupleDesc, i);
 		auto col_name = duckdb::string(GetAttName(attr));
-		auto duck_type = ConvertPostgresToDuckColumnType(attr);
+		auto duck_type = ConvertPostgresToDuckColumnType(attr, resolver);
 		info.columns.AddColumn(duckdb::ColumnDefinition(col_name, duck_type));
 		/* Log column name and type */
 		pd_log(DEBUG2, "(DuckDB/SetTableInfo) Column name: '%s', Type: %s", col_name.c_str(),

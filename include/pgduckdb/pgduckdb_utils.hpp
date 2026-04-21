@@ -1,8 +1,8 @@
 #pragma once
 
+#include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/error_data.hpp"
-#include "pgduckdb/pgduckdb_duckdb.hpp"
 #include "pgduckdb/pg/error_data.hpp"
 #include "pgduckdb/logger.hpp"
 
@@ -164,6 +164,11 @@ duckdb::unique_ptr<duckdb::QueryResult> DuckDBQueryOrThrow(duckdb::ClientContext
 
 duckdb::unique_ptr<duckdb::QueryResult> DuckDBQueryOrThrow(duckdb::Connection &connection, const std::string &query);
 
+/*
+ * Convenience overload for consumers that want to run a query against the
+ * cached DuckDB connection. Defined in the consumer, not in lib, because lib
+ * does not own a connection / manager. ext's pgduckdb_duckdb.cpp provides it.
+ */
 duckdb::unique_ptr<duckdb::QueryResult> DuckDBQueryOrThrow(const std::string &query);
 
 void AppendEscapedUri(std::ostringstream &oss, const char *str);

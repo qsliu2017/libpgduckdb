@@ -1,5 +1,15 @@
 #pragma once
 
+// pg_duckdb's DuckDBManager. Owns the single duckdb::DuckDB instance + the
+// cached connection, plus all pg_duckdb-specific lifecycle glue (GUC-driven
+// DBConfig, secret / extension / optimizer installation, per-connection
+// refresh of secrets / extensions / disabled filesystems).
+//
+// Previously split into: lib's pgduckdb_duckdb.{cpp,hpp} (the class body) +
+// ext's pgduckdb_lib_hooks.cpp (the lifecycle callbacks). The inversion
+// folds both back together here, so libpgduckdb_core.a carries no
+// DuckDBManager symbols and no hooks function pointers.
+
 #include "duckdb.hpp"
 
 namespace pgduckdb {
@@ -51,6 +61,11 @@ private:
 
 	void Initialize();
 
+	// Refreshes per-connection state (secrets, extensions, disabled
+	// filesystems, azure transport option). Called at the top of
+	// CreateConnection / GetConnection.
+	void RefreshConnectionState(duckdb::ClientContext &context);
+
 	/*
 	 * FIXME: Use a unique_ptr instead of a raw pointer. For now this is not
 	 * possible because some DuckDB extensions (historically MotherDuck) could
@@ -64,6 +79,25 @@ private:
 	duckdb::DuckDB *database;
 	duckdb::unique_ptr<duckdb::Connection> connection;
 	std::string default_dbname;
+
+	// Per-backend state that tracks whether the cached connection's
+	// duckdb_secrets / extensions are up-to-date. RefreshConnectionState
+	// drops+reloads secrets when `secrets_valid` flips to false, and
+	// re-runs LOAD extensions when the `duckdb.extensions_table_seq`
+	// sequence advances past `extensions_table_seq`.
+	bool secrets_valid = false;
+	int64_t extensions_table_seq = 0;
+
+	// Lets the InvalidateDuckDBSecretsIfInitialized free function flip
+	// secrets_valid back to false.
+	friend void InvalidateDuckDBSecretsIfInitialized();
 };
+
+/*
+ * Called by ext code (GUC assign hooks, DDL event triggers) when the
+ * duckdb.create_*_secret tables change. Forces the next connection
+ * refresh to drop+reload secrets.
+ */
+void InvalidateDuckDBSecretsIfInitialized();
 
 } // namespace pgduckdb

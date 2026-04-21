@@ -1,7 +1,7 @@
 #include "pgduckdb/scan/postgres_table_reader.hpp"
+#include "pgduckdb/catalog/pgduckdb_storage.hpp"
 #include "pgduckdb/pgduckdb_process_lock.hpp"
 #include "pgduckdb/pgduckdb_utils.hpp"
-#include "pgduckdb/hooks.hpp"
 
 extern "C" {
 #include "postgres.h"
@@ -37,14 +37,15 @@ PostgresTableReader::PostgresTableReader()
 }
 
 void
-PostgresTableReader::Init(const char *table_scan_query, bool count_tuples_only) {
+PostgresTableReader::Init(const char *table_scan_query, bool count_tuples_only, PostgresStorageOptions options) {
 	std::lock_guard<std::recursive_mutex> lock(GlobalProcessLock::GetLock());
 	PostgresScopedStackReset scoped_stack_reset;
-	PostgresMemberGuard(PostgresTableReader::InitUnsafe, table_scan_query, count_tuples_only);
+	PostgresMemberGuard(PostgresTableReader::InitUnsafe, table_scan_query, count_tuples_only, options);
 }
 
 void
-PostgresTableReader::InitUnsafe(const char *table_scan_query, bool count_tuples_only) {
+PostgresTableReader::InitUnsafe(const char *table_scan_query, bool count_tuples_only,
+                                 PostgresStorageOptions options) {
 	List *raw_parsetree_list = pg_parse_query(table_scan_query);
 	Assert(list_length(raw_parsetree_list) == 1);
 	RawStmt *raw_parsetree = linitial_node(RawStmt, raw_parsetree_list);
@@ -77,10 +78,10 @@ PostgresTableReader::InitUnsafe(const char *table_scan_query, bool count_tuples_
 
 	/* Temp tables cannot be excuted with parallel workers, and whole plan should be parallel aware */
 	if (run_scan_with_parallel_workers) {
-		InitRunWithParallelScan(planned_stmt, count_tuples_only);
+		InitRunWithParallelScan(planned_stmt, count_tuples_only, options);
 	}
 
-	if (pgduckdb::hooks::log_pg_explain()) {
+	if (options.log_pg_explain) {
 		ExplainState *es = (ExplainState *)palloc0(sizeof(ExplainState));
 		es->str = makeStringInfo();
 		es->format = EXPLAIN_FORMAT_TEXT;
@@ -94,16 +95,18 @@ PostgresTableReader::InitUnsafe(const char *table_scan_query, bool count_tuples_
 }
 
 void
-PostgresTableReader::InitRunWithParallelScan(PlannedStmt *planned_stmt, bool count_tuples_only) {
+PostgresTableReader::InitRunWithParallelScan(PlannedStmt *planned_stmt, bool count_tuples_only,
+                                              PostgresStorageOptions options) {
 	int parallel_workers = 0;
 	if (count_tuples_only) {
 		/* For count_tuples_only we will try to execute aggregate node on table scan */
 		planned_stmt->planTree->parallel_aware = true;
 		MarkPlanParallelAware((Plan *)table_scan_query_desc->planstate->plan->lefttree);
-		parallel_workers = ParallelWorkerNumber(planned_stmt->planTree->lefttree->plan_rows);
+		parallel_workers =
+		    ParallelWorkerNumber(planned_stmt->planTree->lefttree->plan_rows, options.max_workers_per_postgres_scan);
 	} else {
 		MarkPlanParallelAware(table_scan_query_desc->planstate->plan);
-		parallel_workers = ParallelWorkerNumber(planned_stmt->planTree->plan_rows);
+		parallel_workers = ParallelWorkerNumber(planned_stmt->planTree->plan_rows, options.max_workers_per_postgres_scan);
 	}
 
 	bool interrupts_can_be_process = INTERRUPTS_CAN_BE_PROCESSED();
@@ -204,10 +207,9 @@ PostgresTableReader::CleanupUnsafe() {
  */
 
 int
-PostgresTableReader::ParallelWorkerNumber(Cardinality cardinality) {
+PostgresTableReader::ParallelWorkerNumber(Cardinality cardinality, int max_workers_cap) {
 	static const int cardinality_threshold = 1 << 16;
 	/* No parallel worker scan wanted */
-	const int max_workers_cap = pgduckdb::hooks::max_workers_per_postgres_scan();
 	if (!max_workers_cap) {
 		return 0;
 	}

@@ -3,15 +3,19 @@
 #include "duckdb/storage/storage_extension.hpp"
 #include "duckdb/catalog/catalog.hpp"
 
+#include "pgduckdb/catalog/pgduckdb_storage.hpp"
+
 #include "pgduckdb/utility/cpp_only_file.hpp" // Must be last include.
 
 namespace pgduckdb {
 
 class PostgresSchema;
+struct TypeResolver;
 
 class PostgresCatalog : public duckdb::Catalog {
 public:
-	PostgresCatalog(duckdb::AttachedDatabase &db, const duckdb::string &connection_string);
+	PostgresCatalog(duckdb::AttachedDatabase &db, const duckdb::string &connection_string,
+	                const PostgresStorageOptions &options, const TypeResolver *resolver);
 
 	static duckdb::unique_ptr<duckdb::Catalog> Attach(duckdb::optional_ptr<duckdb::StorageExtensionInfo>,
 	                                                  duckdb::ClientContext &, duckdb::AttachedDatabase &db,
@@ -47,6 +51,12 @@ public:
 	void DropSchema(duckdb::ClientContext &context, duckdb::DropInfo &info) override;
 
 	duckdb::string path;
+
+	// Consumer-supplied config threaded in via the PostgresStorageExtension
+	// at Attach time. `resolver` may be nullptr; options carry lib-safe
+	// defaults.
+	PostgresStorageOptions options;
+	const TypeResolver *resolver = nullptr;
 
 private:
 	duckdb::case_insensitive_map_t<duckdb::unique_ptr<PostgresSchema>> schemas;

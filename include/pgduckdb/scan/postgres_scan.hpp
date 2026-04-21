@@ -11,10 +11,14 @@
 
 namespace pgduckdb {
 
+struct PostgresStorageOptions;
+struct TypeResolver;
+
 // Global State
 
 struct PostgresScanGlobalState : public duckdb::GlobalTableFunctionState {
-	explicit PostgresScanGlobalState(Snapshot, Relation rel, const duckdb::TableFunctionInitInput &input);
+	explicit PostgresScanGlobalState(Snapshot, Relation rel, const duckdb::TableFunctionInitInput &input,
+	                                 const PostgresStorageOptions &options, const TypeResolver *resolver);
 	~PostgresScanGlobalState();
 	idx_t
 	MaxThreads() const override {
@@ -42,6 +46,7 @@ public:
 	duckdb::shared_ptr<PostgresTableReader> table_reader_global_state;
 	MemoryContext duckdb_scan_memory_ctx;
 	idx_t max_threads;
+	const TypeResolver *resolver;
 };
 
 // Local State

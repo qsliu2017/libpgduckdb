@@ -39,8 +39,6 @@ extern "C" {
 #include "pgduckdb/vendor/pg_list.hpp"
 }
 
-#include "pgduckdb/pgduckdb_duckdb.hpp"
-
 extern "C" {
 
 /*
@@ -83,9 +81,23 @@ DefaultFunctionName(Oid /* funcid */, bool * /* use_variadic_p */) {
 	return nullptr;
 }
 
+/*
+ * Default db resolver -- called when a DeparseRoutine leaves
+ * default_database_name NULL. The lib-only name is "memory", matching
+ * DuckDB's in-memory instance. The ext overrides this to report its
+ * attached 'pgduckdb' database name via DuckDBManager.
+ */
+static const char *
+DefaultDefaultDatabaseName(void) {
+	return "memory";
+}
+
+static inline const DeparseRoutine *ActiveRoutine(void);
+
 static List *
 DefaultDbAndSchema(const char *pg_schema, const char * /* table_am_name */) {
-	const char *db_name = pgduckdb::DuckDBManager::Get().GetDefaultDBName().c_str();
+	const DeparseRoutine *r = ActiveRoutine();
+	const char *db_name = (r && r->default_database_name) ? r->default_database_name() : DefaultDefaultDatabaseName();
 	if (pg_schema && strcmp(pg_schema, "public") == 0) {
 		return list_make2((void *)db_name, (void *)"main");
 	}
@@ -154,6 +166,7 @@ DefaultAddTablesamplePercent(const char * /* tsm_name */, StringInfo /* buf */, 
 }
 
 const DeparseRoutine PGDUCKDB_DEFAULT_DEPARSE_ROUTINE = {
+    /* .default_database_name      = */ DefaultDefaultDatabaseName,
     /* .relation_name              = */ DefaultRelationName,
     /* .function_name              = */ DefaultFunctionName,
     /* .db_and_schema              = */ DefaultDbAndSchema,

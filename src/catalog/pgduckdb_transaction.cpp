@@ -48,7 +48,8 @@ SchemaItems::GetTable(const duckdb::string &entry_name) {
 
 	duckdb::CreateTableInfo info;
 	info.table = entry_name;
-	PostgresTable::SetTableInfo(info, rel);
+	auto &pg_catalog = schema->catalog.Cast<PostgresCatalog>();
+	PostgresTable::SetTableInfo(info, rel, pg_catalog.resolver);
 
 	auto cardinality = EstimateRelSize(rel);
 	tables.emplace(entry_name, duckdb::make_uniq<PostgresTable>(schema->catalog, *schema, info, rel, cardinality,

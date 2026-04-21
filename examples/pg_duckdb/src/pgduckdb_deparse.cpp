@@ -74,6 +74,17 @@ namespace pgduckdb {
  * pre-split; the split is purely mechanical.
  * ------------------------------------------------------------------ */
 
+/*
+ * Returns the DuckDB database name pg_duckdb treats as default -- the
+ * attached 'pgduckdb' (or MotherDuck remote) DB reported by DuckDB at
+ * ATTACH time. Called by the lib's default db_and_schema as well as by
+ * ext deparse callbacks below.
+ */
+static const char *
+PgDuckdbDefaultDatabaseName(void) {
+	return DuckDBManager::Get().GetDefaultDBName().c_str();
+}
+
 static char *
 PgDuckdbFunctionName(Oid function_oid, bool *use_variadic_p) {
 	if (!IsDuckdbOnlyFunction(function_oid)) {
@@ -627,6 +638,7 @@ PgDuckdbAddTablesamplePercent(const char *tsm_name, StringInfo buf, int num_args
  * ------------------------------------------------------------------ */
 
 const DeparseRoutine pg_duckdb_deparse_routine = {
+    /* .default_database_name      = */ PgDuckdbDefaultDatabaseName,
     /* .relation_name              = */ PgDuckdbRelationName,
     /* .function_name              = */ PgDuckdbFunctionName,
     /* .db_and_schema              = */ PgDuckdbDbAndSchema,

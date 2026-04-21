@@ -10,11 +10,12 @@
 
 #include "pgduckdb/scan/postgres_scan.hpp"
 #include "pgduckdb/scan/postgres_table_reader.hpp"
+#include "pgduckdb/catalog/pgduckdb_catalog.hpp"
+#include "pgduckdb/catalog/pgduckdb_storage.hpp"
 #include "pgduckdb/pgduckdb_types.hpp"
 #include "pgduckdb/pgduckdb_utils.hpp"
 #include "pgduckdb/pg/memory.hpp"
 #include "pgduckdb/pg/relations.hpp"
-#include "pgduckdb/hooks.hpp"
 
 #include "pgduckdb/pgduckdb_process_lock.hpp"
 #include "pgduckdb/logger.hpp"
@@ -418,13 +419,15 @@ PostgresScanGlobalState::ConstructTableScanQuery(const duckdb::TableFunctionInit
 }
 
 PostgresScanGlobalState::PostgresScanGlobalState(Snapshot _snapshot, Relation _rel,
-                                                 const duckdb::TableFunctionInitInput &input)
+                                                 const duckdb::TableFunctionInitInput &input,
+                                                 const PostgresStorageOptions &options,
+                                                 const TypeResolver *_resolver)
     : snapshot(_snapshot), rel(_rel), table_tuple_desc(RelationGetDescr(rel)), count_tuples_only(false),
       output_columns(), total_row_count(0), registered_local_states(0), scan_query(),
-      table_reader_global_state(nullptr), duckdb_scan_memory_ctx(nullptr), max_threads(1) {
+      table_reader_global_state(nullptr), duckdb_scan_memory_ctx(nullptr), max_threads(1), resolver(_resolver) {
 	ConstructTableScanQuery(input);
 	table_reader_global_state = duckdb::make_shared_ptr<PostgresTableReader>();
-	table_reader_global_state->Init(scan_query.str().c_str(), count_tuples_only);
+	table_reader_global_state->Init(scan_query.str().c_str(), count_tuples_only, options);
 	// Dedicated Postgres memory context for temporary allocations during type conversion in scans.
 	duckdb_scan_memory_ctx = pg::MemoryContextCreate(CurrentMemoryContext, "DuckdbScanContext");
 
@@ -438,7 +441,7 @@ PostgresScanGlobalState::PostgresScanGlobalState(Snapshot _snapshot, Relation _r
 	//   - The table_reader does not launch any parallel Postgres workers, indicating a small scan that executes in the
 	//     current process.
 	if (table_reader_global_state->NumWorkersLaunched() > 0 && !count_tuples_only) {
-		max_threads = pgduckdb::hooks::threads_for_postgres_scan();
+		max_threads = options.threads_for_postgres_scan;
 	}
 
 	pd_log(DEBUG1, "(DuckDB/PostgresSeqScanGlobalState) Running %" PRIu64 " threads: '%s'", (uint64_t)MaxThreads(),
@@ -531,9 +534,15 @@ PostgresScanTableFunction::ToString(duckdb::TableFunctionToStringInput &input) {
 }
 
 duckdb::unique_ptr<duckdb::GlobalTableFunctionState>
-PostgresScanTableFunction::PostgresScanInitGlobal(duckdb::ClientContext &, duckdb::TableFunctionInitInput &input) {
+PostgresScanTableFunction::PostgresScanInitGlobal(duckdb::ClientContext &context,
+                                                   duckdb::TableFunctionInitInput &input) {
 	auto &bind_data = input.bind_data->CastNoConst<PostgresScanFunctionData>();
-	return duckdb::make_uniq<PostgresScanGlobalState>(bind_data.snapshot, bind_data.rel, input);
+	// Pull options + resolver from the attached "pgduckdb" catalog so scan
+	// code keeps zero knowledge of where the knobs came from (ext constructs
+	// the PostgresStorageExtension that owns them).
+	auto &catalog = duckdb::Catalog::GetCatalog(context, "pgduckdb").Cast<PostgresCatalog>();
+	return duckdb::make_uniq<PostgresScanGlobalState>(bind_data.snapshot, bind_data.rel, input, catalog.options,
+	                                                   catalog.resolver);
 }
 
 duckdb::unique_ptr<duckdb::LocalTableFunctionState>

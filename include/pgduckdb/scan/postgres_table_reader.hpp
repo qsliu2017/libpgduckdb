@@ -1,5 +1,6 @@
 #pragma once
 
+#include "pgduckdb/catalog/pgduckdb_storage.hpp" // PostgresStorageOptions (by-value into Init)
 #include "pgduckdb/pg/declarations.hpp"
 
 #include <vector>
@@ -13,7 +14,7 @@ public:
 	PostgresTableReader();
 	~PostgresTableReader();
 	TupleTableSlot *GetNextTuple();
-	void Init(const char *table_scan_query, bool count_tuples_only);
+	void Init(const char *table_scan_query, bool count_tuples_only, PostgresStorageOptions options);
 	void Cleanup();
 	bool GetNextMinimalWorkerTuple(std::vector<uint8_t> &minimal_tuple_buffer);
 	TupleTableSlot *InitTupleSlot();
@@ -26,13 +27,13 @@ private:
 	PostgresTableReader(const PostgresTableReader &) = delete;
 	PostgresTableReader &operator=(const PostgresTableReader &) = delete;
 
-	void InitUnsafe(const char *table_scan_query, bool count_tuples_only);
-	void InitRunWithParallelScan(PlannedStmt *, bool);
+	void InitUnsafe(const char *table_scan_query, bool count_tuples_only, PostgresStorageOptions options);
+	void InitRunWithParallelScan(PlannedStmt *, bool, PostgresStorageOptions options);
 	void CleanupUnsafe();
 
 	TupleTableSlot *GetNextTupleUnsafe();
 	MinimalTuple GetNextWorkerTuple();
-	int ParallelWorkerNumber(Cardinality cardinality);
+	static int ParallelWorkerNumber(Cardinality cardinality, int max_workers_cap);
 	bool CanTableScanRunInParallel(Plan *plan);
 	bool MarkPlanParallelAware(Plan *plan);
 

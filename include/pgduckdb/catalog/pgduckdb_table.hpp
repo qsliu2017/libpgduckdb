@@ -9,6 +9,8 @@
 
 namespace pgduckdb {
 
+struct TypeResolver;
+
 class PostgresTable : public duckdb::TableCatalogEntry {
 public:
 	PostgresTable(duckdb::Catalog &catalog, duckdb::SchemaCatalogEntry &schema, duckdb::CreateTableInfo &info,
@@ -23,7 +25,7 @@ public:
 	duckdb::TableStorageInfo GetStorageInfo(duckdb::ClientContext &context) override;
 
 	static Relation OpenRelation(Oid relid);
-	static void SetTableInfo(duckdb::CreateTableInfo &info, Relation rel);
+	static void SetTableInfo(duckdb::CreateTableInfo &info, Relation rel, const TypeResolver *resolver);
 
 protected:
 	Relation rel;

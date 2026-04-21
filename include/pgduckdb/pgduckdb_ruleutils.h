@@ -52,6 +52,15 @@ typedef struct StarReconstructionContext {
  * walker owns that). They may read syscache.
  */
 typedef struct DeparseRoutine {
+	/*
+	 * Returns the DuckDB database name to use when the lib default
+	 * db_and_schema callback maps a schema to a (db, schema) pair. NULL ->
+	 * "memory" (DuckDB's in-memory default instance name). Must be safe to
+	 * call before the DuckDB instance is fully initialized; the ext
+	 * implementation forwards to DuckDBManager::Get().GetDefaultDBName().
+	 */
+	const char *(*default_database_name)();
+
 	/* Qualified name for relid. NULL -> lib default ("schema"."table"). */
 	char *(*relation_name)(Oid relid);
 

@@ -4,20 +4,31 @@
 #include "pgduckdb/catalog/pgduckdb_schema.hpp"
 #include "pgduckdb/catalog/pgduckdb_storage.hpp"
 #include "pgduckdb/catalog/pgduckdb_transaction.hpp"
+#include "pgduckdb/pgduckdb_types.hpp"
 
 #include "pgduckdb/utility/cpp_only_file.hpp" // Must be last include.
 
 namespace pgduckdb {
 
-PostgresCatalog::PostgresCatalog(duckdb::AttachedDatabase &_db, const duckdb::string &connection_string)
-    : Catalog(_db), path(connection_string), schemas() {
+PostgresCatalog::PostgresCatalog(duckdb::AttachedDatabase &_db, const duckdb::string &connection_string,
+                                 const PostgresStorageOptions &_options, const TypeResolver *_resolver)
+    : Catalog(_db), path(connection_string), options(_options), resolver(_resolver), schemas() {
 }
 
 duckdb::unique_ptr<duckdb::Catalog>
-PostgresCatalog::Attach(duckdb::optional_ptr<duckdb::StorageExtensionInfo>, duckdb::ClientContext &,
+PostgresCatalog::Attach(duckdb::optional_ptr<duckdb::StorageExtensionInfo> storage_info, duckdb::ClientContext &,
                         duckdb::AttachedDatabase &db, const duckdb::string &, duckdb::AttachInfo &info,
                         duckdb::AttachOptions &) {
-	return duckdb::make_uniq<PostgresCatalog>(db, info.path);
+	PostgresStorageOptions options;
+	const TypeResolver *resolver = nullptr;
+	if (storage_info) {
+		auto *pg_info = dynamic_cast<PostgresStorageInfo *>(storage_info.get());
+		if (pg_info) {
+			options = pg_info->options;
+			resolver = pg_info->resolver;
+		}
+	}
+	return duckdb::make_uniq<PostgresCatalog>(db, info.path, options, resolver);
 }
 
 // ------------------ Catalog API ---------------------

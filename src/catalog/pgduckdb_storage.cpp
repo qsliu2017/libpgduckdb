@@ -15,6 +15,17 @@ CreateTransactionManager(duckdb::optional_ptr<duckdb::StorageExtensionInfo>, duc
 PostgresStorageExtension::PostgresStorageExtension() {
 	attach = PostgresCatalog::Attach;
 	create_transaction_manager = CreateTransactionManager;
+	storage_info = duckdb::make_shared_ptr<PostgresStorageInfo>();
+}
+
+PostgresStorageExtension::PostgresStorageExtension(const PostgresStorageOptions &options,
+                                                   const TypeResolver *resolver) {
+	attach = PostgresCatalog::Attach;
+	create_transaction_manager = CreateTransactionManager;
+	auto info = duckdb::make_shared_ptr<PostgresStorageInfo>();
+	info->options = options;
+	info->resolver = resolver;
+	storage_info = std::move(info);
 }
 
 } // namespace pgduckdb
