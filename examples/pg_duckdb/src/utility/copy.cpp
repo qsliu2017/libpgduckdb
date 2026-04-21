@@ -29,6 +29,8 @@ extern "C" {
 #include "pgduckdb/pgduckdb_ruleutils.h"
 }
 
+#include "pgduckdb/pgduckdb_deparse.hpp"
+
 /*
  * Returns the relation of the copy_stmt as a fully qualified DuckDB table reference. This is done
  * including the column names if provided in the original copy_stmt, e.g. my_table(column1, column2).
@@ -428,7 +430,7 @@ MakeDuckdbCopyQuery(PlannedStmt *pstmt, const char *query_string, struct QueryEn
 		CheckQueryPermissions(query, query_string);
 
 		appendStringInfo(rewritten_query_info, "(");
-		appendStringInfoString(rewritten_query_info, pgduckdb_get_querydef(query));
+		appendStringInfoString(rewritten_query_info, pgduckdb_get_querydef(query, &pgduckdb::pg_duckdb_deparse_routine));
 		appendStringInfo(rewritten_query_info, ")");
 	} else {
 		ParseState *pstate = make_parsestate(NULL);

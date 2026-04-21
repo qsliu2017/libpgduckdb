@@ -32,6 +32,8 @@ extern "C" {
 #endif
 }
 
+#include "pgduckdb/pgduckdb_deparse.hpp"
+
 #include "pgduckdb/pgduckdb_duckdb.hpp"
 #include "pgduckdb/pgduckdb_node.hpp"
 #include "pgduckdb/vendor/pg_list.hpp"
@@ -41,7 +43,7 @@ extern "C" {
 duckdb::unique_ptr<duckdb::PreparedStatement>
 DuckdbPrepare(const Query *query, const char *explain_prefix) {
 	Query *copied_query = (Query *)copyObjectImpl(query);
-	const char *query_string = pgduckdb_get_querydef(copied_query);
+	const char *query_string = pgduckdb_get_querydef(copied_query, &pgduckdb::pg_duckdb_deparse_routine);
 
 	if (explain_prefix) {
 		query_string = psprintf("%s %s", explain_prefix, query_string);

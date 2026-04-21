@@ -44,6 +44,7 @@ extern "C" {
 #include "pgduckdb/utility/cpp_wrapper.hpp"
 #include "pgduckdb/pgduckdb_duckdb.hpp"
 #include "pgduckdb/pgduckdb_metadata_cache.hpp"
+#include "pgduckdb/pgduckdb_deparse.hpp"
 #include "pgduckdb/utility/copy.hpp"
 #include "pgduckdb/vendor/pg_list.hpp"
 #include <inttypes.h>
@@ -217,7 +218,7 @@ EntrenchColumnsFromCall(Query *query, const char *function_call, const char **qu
  */
 static Query *
 WrapQueryInDuckdbQueryCall(Query *query, const char *query_string) {
-	char *duckdb_query_string = pgduckdb_get_querydef(query);
+	char *duckdb_query_string = pgduckdb_get_querydef(query, &pgduckdb::pg_duckdb_deparse_routine);
 
 	char *function_call = psprintf("duckdb.query(%s)", quote_literal_cstr(duckdb_query_string));
 
@@ -802,7 +803,7 @@ DECLARE_PG_FUNCTION(duckdb_create_table_trigger) {
 
 	pgduckdb::DuckDBQueryOrThrow(*connection, create_table_string);
 	if (ctas_query) {
-		const char *ctas_query_string = pgduckdb_get_querydef(ctas_query);
+		const char *ctas_query_string = pgduckdb_get_querydef(ctas_query, &pgduckdb::pg_duckdb_deparse_routine);
 
 		std::string insert_string =
 		    std::string("INSERT INTO ") + pgduckdb_relation_name(relid) + " " + ctas_query_string;
