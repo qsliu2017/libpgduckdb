@@ -88,9 +88,9 @@ ORDER BY
     total_spent DESC;
 ```
 
-### Creating MotherDuck-backed tables
+### Creating DuckDB-backed tables
 
-To persist the results of an analytical query, you can create a new table that uses MotherDuck to store the data in columnar format. Use the `USING duckdb` clause.
+To persist the results of an analytical query, you can create a new table that uses DuckDB to store the data in columnar format. Use the `USING duckdb` clause.
 
 ```sql
 -- Create a new table 'sales_summary' with DuckDB storage
@@ -153,10 +153,6 @@ This section outlines behaviors and limitations in `pg_duckdb`, things to know t
 
 - **Avoid mixed transactions**. There is a setting `duckdb.unsafe_allow_mixed_transactions` to bypass the separate-write rule. This is not recommended as it can lead to data inconsistency if one part of the transaction fails.
 
-
-### MotherDuck
-
-- **Schema mapping is specific**. MotherDuck databases and schemas are mapped to PostgreSQL schemas with a special naming convention. Your default database's `main` schema maps to `public`. Other schemas are mapped to names like `ddb$<db_name>$<schema_name>`.
 
 ### Configuration
 

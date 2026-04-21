@@ -135,7 +135,7 @@ VARCHAR	VARCHAR	VARCHAR
 (1 row)
 
 CREATE TABLE t(a int);
-ERROR:  Only TEMP tables are supported in DuckDB if MotherDuck support is not enabled
+ERROR:  Only TEMP tables are supported in DuckDB
 -- XXX: A better error message would be nice here, but for now this is acceptable.
 CREATE TEMP TABLE t(a int PRIMARY KEY);
 ERROR:  duckdb does not implement duckdb_index_build_range_scan

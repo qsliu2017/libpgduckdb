@@ -113,7 +113,6 @@ EXECUTE FUNCTION duckdb._update_extensions_table_seq();
 CREATE TABLE tables (
     relid regclass PRIMARY KEY,
     duckdb_db TEXT NOT NULL,
-    motherduck_catalog_version TEXT,
     default_database TEXT NOT NULL
 );
 
@@ -173,10 +172,6 @@ CREATE FUNCTION duckdb._grant_trigger() RETURNS event_trigger
 CREATE EVENT TRIGGER duckdb_grant_trigger ON ddl_command_end
     WHEN tag IN ('GRANT')
     EXECUTE FUNCTION duckdb._grant_trigger();
-
-CREATE PROCEDURE force_motherduck_sync(drop_with_cascade BOOLEAN DEFAULT false)
-    SET search_path = pg_catalog, pg_temp
-    LANGUAGE C AS 'MODULE_PATHNAME';
 
 DO $$
 BEGIN
@@ -1810,32 +1805,6 @@ RETURNS duckdb.unresolved_type
 SET search_path = pg_catalog, pg_temp
 AS 'MODULE_PATHNAME', 'duckdb_only_function'
 LANGUAGE C;
-
-CREATE FUNCTION duckdb.is_motherduck_enabled()
-RETURNS bool
-SET search_path = pg_catalog, pg_temp
-LANGUAGE C AS 'MODULE_PATHNAME', 'pgduckdb_is_motherduck_enabled';
-REVOKE ALL ON FUNCTION duckdb.is_motherduck_enabled() FROM PUBLIC;
-
-CREATE FUNCTION duckdb.fdw_handler()
-RETURNS fdw_handler
-AS 'MODULE_PATHNAME', 'pgduckdb_fdw_handler'
-LANGUAGE C STRICT;
-
-CREATE FUNCTION duckdb.fdw_validator(
-    options text[],
-    catalog oid
-)
-RETURNS void
-AS 'MODULE_PATHNAME', 'pgduckdb_fdw_validator'
-LANGUAGE C STRICT PARALLEL SAFE;
-
-CREATE FOREIGN DATA WRAPPER duckdb
-  HANDLER duckdb.fdw_handler
-  VALIDATOR duckdb.fdw_validator;
-
-CREATE PROCEDURE duckdb.enable_motherduck(TEXT DEFAULT '::FROM_ENV::', TEXT DEFAULT '')
-LANGUAGE C AS 'MODULE_PATHNAME', 'pgduckdb_enable_motherduck';
 
 CREATE TYPE duckdb.map;
 CREATE FUNCTION duckdb.map_in(cstring) RETURNS duckdb.map AS 'MODULE_PATHNAME', 'duckdb_map_in' LANGUAGE C IMMUTABLE STRICT;

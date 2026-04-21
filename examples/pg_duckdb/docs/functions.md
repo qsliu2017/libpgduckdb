@@ -90,14 +90,6 @@ All of the DuckDB [map functions](https://duckdb.org/docs/sql/data_types/map.htm
 | [`duckdb.create_simple_secret`](#create_simple_secret) | Creates a simple secret for cloud storage access. |
 | [`duckdb.create_azure_secret`](#create_azure_secret) | Creates an Azure secret using a connection string. |
 
-## Motherduck Functions
-
-| Name | Description |
-| :--- | :---------- |
-| [`duckdb.enable_motherduck`](#enable_motherduck) | Enables MotherDuck integration with a token. |
-| [`duckdb.is_motherduck_enabled`](#is_motherduck_enabled) | Checks if MotherDuck integration is enabled. |
-| [`duckdb.force_motherduck_sync`](#force_motherduck_sync) | Forces a full resync of MotherDuck databases and schemas to Postgres (for debugging). |
-
 ## Detailed Descriptions
 
 #### <a name="read_parquet"></a>`read_parquet(path TEXT or TEXT[], ...)` -> `SETOF duckdb.row`
@@ -422,38 +414,6 @@ open DuckDB instance using:
 CALL duckdb.recycle_ddb();
 ```
 
-#### <a name="enable_motherduck"></a>`duckdb.enable_motherduck(token TEXT, database_name TEXT)` -> `void`
-
-Enables MotherDuck integration with the provided authentication token.
-
-```sql
--- Enable MotherDuck with default database
-SELECT duckdb.enable_motherduck('your_token_here');
-
--- Enable MotherDuck with specific database
-SELECT duckdb.enable_motherduck('your_token_here', 'my_database');
-```
-
-##### Required Arguments
-
-| Name | Type | Description |
-| :--- | :--- | :---------- |
-| token | text | Your MotherDuck authentication token |
-
-##### Optional Arguments
-
-| Name | Type | Description |
-| :--- | :--- | :---------- |
-| database_name | text | Specific MotherDuck database to connect to |
-
-#### <a name="is_motherduck_enabled"></a>`duckdb.is_motherduck_enabled()` -> `boolean`
-
-Checks whether MotherDuck integration is currently enabled for this session.
-
-```sql
-SELECT duckdb.is_motherduck_enabled();
-```
-
 #### <a name="create_simple_secret"></a>`duckdb.create_simple_secret(type TEXT, key_id TEXT, secret TEXT, region TEXT, ...)` -> `void`
 
 Creates a simple secret for accessing cloud storage services like S3, GCS, or R2.
@@ -524,36 +484,6 @@ SELECT duckdb.create_azure_secret(
 | Name | Type | Description |
 | :--- | :--- | :---------- |
 | scope | text | Scope for the secret (default: '') |
-
-#### <a name="force_motherduck_sync"></a>`duckdb.force_motherduck_sync(drop_with_cascade BOOLEAN DEFAULT false)`
-
-> **Warning**: There are known issues with this function. To re-trigger a sync, it is recommended to use the following command instead:
->
-> ```sql
-> SELECT * FROM pg_terminate_backend((
->   SELECT pid FROM pg_stat_activity WHERE backend_type = 'pg_duckdb sync worker'
-> ));
-> ```
-
-`pg_duckdb` will normally automatically synchronize your MotherDuck tables with Postgres using a Postgres background worker. Sometimes this synchronization fails. This can happen for various reasons, but often this is due to permission issues or users having created dependencies on MotherDuck tables that need to be updated. In those cases this function can be helpful for a few reasons:
-
-1. To show the ERRORs that happen during syncing
-2. To retrigger a sync after fixing the issue
-3. To drop the MotherDuck tables with `CASCADE` to drop all objects that depend on it.
-
-For the first two usages you can simply call this procedure like follows:
-
-```sql
-CALL duckdb.force_motherduck_sync();
-```
-
-But for the third usage you need to run pass it the `drop_with_cascade` parameter:
-
-```sql
-CALL duckdb.force_motherduck_sync(drop_with_cascade := true);
-```
-
-NOTE: Dropping with cascade will drop all objects that depend on the MotherDuck tables. This includes all views, functions, and tables that depend on the MotherDuck tables. This can be a destructive operation, so use with caution.
 
 #### <a name="time_bucket"></a>`time_bucket(bucket_width INTERVAL, timestamp_col TIMESTAMP, origin TIMESTAMP)` -> `TIMESTAMP`
 

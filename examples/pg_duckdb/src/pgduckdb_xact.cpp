@@ -5,7 +5,6 @@
 #include "pgduckdb/pgduckdb_xact.hpp"
 #include "pgduckdb/pgduckdb_hooks.hpp"
 #include "pgduckdb/pgduckdb_utils.hpp"
-#include "pgduckdb/pgduckdb_background_worker.hpp"
 
 #include "pgduckdb/pg/transactions.hpp"
 #include "pgduckdb/utility/cpp_wrapper.hpp"
@@ -74,8 +73,7 @@ AllowWrites() {
 
 bool
 MixedWritesAllowed() {
-	return !pg::IsInTransactionBlock() || duckdb_unsafe_allow_mixed_transactions || pg::force_allow_writes ||
-	       pgduckdb::doing_motherduck_sync;
+	return !pg::IsInTransactionBlock() || duckdb_unsafe_allow_mixed_transactions || pg::force_allow_writes;
 }
 
 bool

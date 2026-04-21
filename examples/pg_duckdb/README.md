@@ -25,7 +25,6 @@
 
 - **Execute analytics queries without changes**: run your existing SQL analytics queries as you normally would, and `pg_duckdb` will automatically use DuckDB's SQL engine to execute them when you set `duckdb.force_execution=true`.
 - **Read/write data from data lakes**: Read/write* Parquet, CSV, JSON, Iceberg & Delta Lake from S3, GCS, Azure & R2.
-- **Integration with cloud analytics**: Out-of-the-box support of [MotherDuck](https://motherduck.com/) as compute provider.
 
 ## How `pg_duckdb` works
 
@@ -129,31 +128,6 @@ SELECT duckdb.install_extension('delta');
 SELECT * FROM delta_scan('s3://lakehouse/user_events')
 ```
 
-### MotherDuck integration (optional)
-
-`pg_duckdb` integrates with [MotherDuck](https://motherduck.com/), a cloud analytics platform. This allows you to run your queries on MotherDuck's powerful compute infrastructure, while still using your existing PostgreSQL tables.
-
-To learn more, see [MotherDuck documentation](docs/motherduck.md).
-
-```sql
--- Connect to MotherDuck
-CALL duckdb.enable_motherduck('<your_motherduck_token>');
-```
-
-```sql
--- Your existing MotherDuck tables appear automatically
-SELECT region, COUNT(*) FROM my_cloud_analytics_table;
-
--- Create cloud tables that sync across teams
-CREATE TABLE real_time_kpis USING duckdb AS
-SELECT
-    date_trunc('day', created_at) as date,
-    COUNT(*) as daily_signups,
-    SUM(revenue) as daily_revenue
-FROM user_events
-GROUP BY date;
-```
-
 ## Quick Start
 
 ### Docker
@@ -162,12 +136,6 @@ Run PostgreSQL with pg_duckdb pre-installed in a docker container:
 
 ```bash
 docker run -d -e POSTGRES_PASSWORD=duckdb pgduckdb/pgduckdb:18-v1.1.1
-```
-
-With MotherDuck:
-```bash
-export MOTHERDUCK_TOKEN=<your_token>
-docker run -d -e POSTGRES_PASSWORD=duckdb -e MOTHERDUCK_TOKEN pgduckdb/pgduckdb:18-v1.1.1
 ```
 
 ### Try with Hydra
@@ -202,7 +170,6 @@ See [settings documentation](docs/settings.md) for complete configuration option
 | [Functions](docs/functions.md) | Complete function reference |
 | [Syntax Guide & Gotchas](docs/gotchas_and_syntax.md) | Quick reference for common SQL patterns and things to know |
 | [Types](docs/types.md) | Supported data types and advanced types usage |
-| [MotherDuck](docs/motherduck.md) | Cloud integration guide |
 | [Secrets](docs/secrets.md) | Credential management |
 | [Extensions](docs/extensions.md) | DuckDB extension usage |
 | [Transactions](docs/transactions.md) | Transaction behavior |

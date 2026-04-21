@@ -13,7 +13,6 @@ from pathlib import Path
 from tempfile import gettempdir
 from typing import Any
 
-import duckdb
 import filelock
 import psycopg
 import psycopg.conninfo
@@ -57,8 +56,6 @@ elif platform.system() == "OpenBSD":
     OPENBSD = True
 
 BSD = MACOS or FREEBSD or OPENBSD
-
-os.environ["motherduck_disable_web_login"] = "1"
 
 
 def eprint(*args, **kwargs):
@@ -141,22 +138,6 @@ def wait_until(error_message="Did not complete in time", timeout=5, interval=1):
         yield
         time.sleep(interval)
     raise TimeoutError(error_message)
-
-
-def make_new_duckdb_connection(db_name, token, reset=True, hint=None):
-    hint_str = f"&session_hint={hint}" if hint else ""
-    con = duckdb.connect(f"md:?token={token}{hint_str}")
-    if reset:
-        con.execute(f"DROP DATABASE IF EXISTS {db_name}")
-        con.execute(f"CREATE DATABASE {db_name}")
-
-    for _ in wait_until(f"Database {db_name} did not appear in time", timeout=60):
-        try:
-            return con.execute(f"USE {db_name}.main")
-        except duckdb.CatalogException:
-            con.execute("REFRESH DATABASES").fetchall()
-
-    return con
 
 
 PG_MAJOR_VERSION = get_pg_major_version()

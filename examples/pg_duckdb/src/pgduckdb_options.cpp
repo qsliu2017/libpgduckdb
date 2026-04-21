@@ -1,11 +1,9 @@
 #include "duckdb.hpp"
 
 #include "pgduckdb/pgduckdb_utils.hpp"
-#include "pgduckdb/pgduckdb_background_worker.hpp"
 #include "pgduckdb/pgduckdb_duckdb.hpp"
 #include "pgduckdb/pgduckdb_xact.hpp"
 #include "pgduckdb/pgduckdb_metadata_cache.hpp"
-#include "pgduckdb/pgduckdb_userdata_cache.hpp"
 #include "pgduckdb/pg/functions.hpp"
 #include "pgduckdb/utility/cpp_wrapper.hpp"
 
@@ -82,67 +80,6 @@ DECLARE_PG_FUNCTION(pgduckdb_raw_query) {
 	auto result = pgduckdb::DuckDBQueryOrThrow(query);
 	elog(NOTICE, "result: %s", result->ToString().c_str());
 	PG_RETURN_BOOL(true);
-}
-
-DECLARE_PG_FUNCTION(pgduckdb_is_motherduck_enabled) {
-	PG_RETURN_BOOL(pgduckdb::IsMotherDuckEnabled());
-}
-
-DECLARE_PG_FUNCTION(pgduckdb_enable_motherduck) {
-	pgduckdb::pg::PreventInTransactionBlock("duckdb.enable_motherduck()");
-
-	if (pgduckdb::IsMotherDuckEnabled()) {
-		elog(NOTICE, "MotherDuck is already enabled");
-		PG_RETURN_BOOL(false);
-	}
-
-	auto token = pgduckdb::pg::GetArgString(fcinfo, 0);
-	auto default_database = pgduckdb::pg::GetArgString(fcinfo, 1);
-
-	// If no token provided, check that token exists in the environment
-	if (token == "::FROM_ENV::" && getenv("MOTHERDUCK_TOKEN") == nullptr && getenv("motherduck_token") == nullptr) {
-		elog(ERROR, "No token was provided and `motherduck_token` environment variable was not set");
-	}
-
-	SPI_connect_ext(SPI_OPT_NONATOMIC);
-
-	if (pgduckdb::GetMotherduckForeignServerOid() == InvalidOid) {
-		std::string query = "CREATE SERVER motherduck TYPE 'motherduck' FOREIGN DATA WRAPPER duckdb";
-		if (default_database.empty()) {
-			query += ";";
-		} else {
-			query += " OPTIONS (default_database " + duckdb::KeywordHelper::WriteQuoted(default_database) + ");";
-		}
-		auto ret = SPI_exec(query.c_str(), 0);
-		if (ret != SPI_OK_UTILITY) {
-			elog(ERROR, "Could not create 'motherduck' SERVER: %s", SPI_result_code_string(ret));
-		}
-	} else if (!default_database.empty()) {
-		// TODO: check if it was set to the same value and update it or only error in that case
-		elog(ERROR, "Cannot provide a default_database: because the server already exists");
-	}
-
-	{
-		// Create mapping for current user
-		auto query = "CREATE USER MAPPING FOR CURRENT_USER SERVER motherduck OPTIONS (token " +
-		             duckdb::KeywordHelper::WriteQuoted(token) + ");";
-		auto ret = SPI_exec(query.c_str(), 0);
-		if (ret != SPI_OK_UTILITY) {
-			elog(ERROR, "Could not create USER MAPPING for current user: %s", SPI_result_code_string(ret));
-		}
-	}
-
-	/*
-	 * New we need to start the background worker, so that the table sync
-	 * starts. We need to first commit though, otherwise if the background
-	 * worker starts quick enough, it will not see that we enabled motherduck
-	 * (i.e. it does not see the motherduck SERVER).
-	 */
-	SPI_commit();
-	SPI_finish();
-	pgduckdb::StartBackgroundWorkerIfNeeded();
-
-	PG_RETURN_VOID();
 }
 
 DECLARE_PG_FUNCTION(pgduckdb_create_simple_secret) {

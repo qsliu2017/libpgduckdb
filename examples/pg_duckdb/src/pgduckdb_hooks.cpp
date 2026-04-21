@@ -30,7 +30,6 @@ extern "C" {
 #include "pgduckdb/pgduckdb_metadata_cache.hpp"
 #include "pgduckdb/pgduckdb_ddl.hpp"
 #include "pgduckdb/pgduckdb_table_am.hpp"
-#include "pgduckdb/pgduckdb_background_worker.hpp"
 #include "pgduckdb/utility/copy.hpp"
 #include "pgduckdb/vendor/pg_explain.hpp"
 #include "pgduckdb/vendor/pg_list.hpp"
@@ -194,14 +193,6 @@ ShouldTryToUseDuckdbExecution(Query *query) {
 		return false;
 	}
 
-	if (pgduckdb::is_background_worker) {
-		/* If we're the background worker, we don't want to force duckdb
-		 * execution. Some of the queries that we're doing depend on Postgres
-		 * execution, particularly the ones that use the regclsas type to
-		 * understand tablenames. */
-		return false;
-	}
-
 	return duckdb_force_execution && pgduckdb::IsAllowedStatement(query) && ContainsFromClause(query);
 }
 
@@ -265,12 +256,10 @@ static PlannedStmt *
 DuckdbPlannerHook_Cpp(Query *parse, const char *query_string, int cursor_options, ParamListInfo bound_params) {
 	if (pgduckdb::IsExtensionRegistered()) {
 		if (pgduckdb::NeedsDuckdbExecution(parse)) {
-			pgduckdb::TriggerActivity();
 			pgduckdb::IsAllowedStatement(parse, true);
 
 			return DuckdbPlanNode(parse, cursor_options, true);
 		} else if (pgduckdb::ShouldTryToUseDuckdbExecution(parse)) {
-			pgduckdb::TriggerActivity();
 			PlannedStmt *duckdbPlan = DuckdbPlanNode(parse, cursor_options, false);
 			if (duckdbPlan) {
 				return duckdbPlan;
@@ -429,18 +418,6 @@ DuckdbExplainOneQueryHook(Query *query, int cursorOptions, IntoClause *into, Exp
 }
 
 static bool
-IsOutdatedMotherduckCatalogErrcode(int error_code) {
-	switch (error_code) {
-	case ERRCODE_UNDEFINED_COLUMN:
-	case ERRCODE_UNDEFINED_SCHEMA:
-	case ERRCODE_UNDEFINED_TABLE:
-		return true;
-	default:
-		return false;
-	}
-}
-
-static bool
 ContainsDuckdbRowReturningFunction(const char *query_string) {
 	return strstr(query_string, "read_parquet") || strstr(query_string, "read_csv") ||
 	       strstr(query_string, "read_json") || strstr(query_string, "delta_scan") ||
@@ -473,22 +450,6 @@ DuckdbEmitLogHook(ErrorData *edata) {
 			    "in pg_duckdb 0.3.0. It seems like you might be using the outdated \"AS (colname coltype, ...)\" "
 			    "syntax");
 		}
-	}
-
-	/*
-	 * The background worker stops syncing the catalogs after the
-	 * motherduck_background_catalog_refresh_inactivity_timeout has been
-	 * reached. This means that the table metadata that Postgres knows about
-	 * could be out of date, which could then easily result in errors about
-	 * missing from the Postgres parser because it cannot understand the query.
-	 *
-	 * This mitigates the impact of that by triggering a restart of the catalog
-	 * syncing when one of those errors occurs AND the current user can
-	 * actually use DuckDB.
-	 */
-	if (IsOutdatedMotherduckCatalogErrcode(edata->sqlerrcode) && pgduckdb::IsExtensionRegistered() &&
-	    pgduckdb::IsDuckdbExecutionAllowed()) {
-		pgduckdb::TriggerActivity();
 	}
 }
 

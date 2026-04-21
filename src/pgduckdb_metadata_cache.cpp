@@ -29,8 +29,6 @@ extern "C" {
 #include "pgduckdb/pgduckdb.h"
 #include "pgduckdb/vendor/pg_list.hpp"
 #include "pgduckdb/pgduckdb_metadata_cache.hpp"
-#include "pgduckdb/pgduckdb_userdata_cache.hpp"
-#include "pgduckdb/pgduckdb_background_worker.hpp"
 #include "pgduckdb/pgduckdb_guc.hpp"
 
 namespace pgduckdb {
@@ -265,8 +263,6 @@ IsExtensionRegistered() {
 	cache.version++;
 
 	if (cache.installed) {
-		InitUserDataCache();
-
 		/* If the extension is installed we can build the rest of the cache */
 		BuildDuckdbOnlyFunctions();
 
@@ -420,18 +416,6 @@ bool
 IsDuckdbTable(Relation relation) {
 	Assert(cache.valid);
 	return IsDuckdbTable(relation->rd_rel);
-}
-
-bool
-IsMotherDuckTable(Form_pg_class relation) {
-	Assert(cache.valid);
-	return IsDuckdbTable(relation) && relation->relpersistence == RELPERSISTENCE_PERMANENT;
-}
-
-bool
-IsMotherDuckTable(Relation relation) {
-	Assert(cache.valid);
-	return IsMotherDuckTable(relation->rd_rel);
 }
 
 bool

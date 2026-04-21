@@ -6,9 +6,9 @@
 extern "C" {
 #include "postgres.h"
 #include "miscadmin.h"
+#include "fmgr.h"
 }
 
-#include "pgduckdb/pgduckdb_background_worker.hpp"
 #include "pgduckdb/pgduckdb_node.hpp"
 #include "pgduckdb/pgduckdb_xact.hpp"
 
@@ -36,7 +36,6 @@ _PG_init(void) {
 	pgduckdb::InitGUCHooks();
 	DuckdbInitHooks();
 	DuckdbInitNode();
-	pgduckdb::InitBackgroundWorkersShmem();
 	pgduckdb::RegisterDuckdbXactCallback();
 }
 } // extern "C"

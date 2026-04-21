@@ -124,9 +124,7 @@ bool duckdb_convert_unsupported_numeric_to_double = false;
 bool duckdb_log_pg_explain = false;
 int duckdb_threads_for_postgres_scan = 2;
 int duckdb_max_workers_per_postgres_scan = 2;
-char *duckdb_motherduck_session_hint = strdup("");
 char *duckdb_postgres_role = strdup("");
-bool duckdb_force_motherduck_views = false;
 
 int duckdb_maximum_threads = -1;
 int duckdb_maximum_memory = 4096; /* 4GB in MB */
@@ -171,13 +169,9 @@ InitGUC() {
 	                     &duckdb_max_workers_per_postgres_scan, 0, MAX_PARALLEL_WORKER_LIMIT);
 
 	DefineCustomVariable("duckdb.postgres_role",
-	                     "Which postgres role should be allowed to use DuckDB execution, use the secrets and create "
-	                     "MotherDuck tables. Defaults to superusers only",
+	                     "Which postgres role should be allowed to use DuckDB execution and use the secrets. "
+	                     "Defaults to superusers only",
 	                     &duckdb_postgres_role, PGC_POSTMASTER, GUC_SUPERUSER_ONLY);
-
-	DefineCustomVariable("duckdb.force_motherduck_views",
-	                     "Force all views to be created in MotherDuck, even if they don't use MotherDuck tables",
-	                     &duckdb_force_motherduck_views);
 
 	/* GUCs acting on DuckDB instance */
 	DefineCustomDuckDBVariable("duckdb.enable_external_access", "Allow the DuckDB to access external state.",
@@ -232,9 +226,6 @@ InitGUC() {
 	DefineCustomDuckDBVariable("duckdb.default_collation",
 	                           "The default collation to use for DuckDB queries, e.g., 'en_us'",
 	                           &duckdb_default_collation, PGC_SUSET);
-
-	DefineCustomDuckDBVariable("duckdb.motherduck_session_hint", "The session hint to use for MotherDuck connections",
-	                           &duckdb_motherduck_session_hint);
 
 	DefineCustomDuckDBVariable("duckdb.disabled_filesystems",
 	                           "Disable specific file systems preventing access (e.g., LocalFileSystem)",

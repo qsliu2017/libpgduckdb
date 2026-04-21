@@ -43,10 +43,7 @@ extern "C" {
 #include "pgduckdb/pgduckdb_guc.hpp"
 #include "pgduckdb/utility/cpp_wrapper.hpp"
 #include "pgduckdb/pgduckdb_duckdb.hpp"
-#include "pgduckdb/pgduckdb_background_worker.hpp"
-#include "pgduckdb/pgduckdb_fdw.hpp"
 #include "pgduckdb/pgduckdb_metadata_cache.hpp"
-#include "pgduckdb/pgduckdb_userdata_cache.hpp"
 #include "pgduckdb/utility/copy.hpp"
 #include "pgduckdb/vendor/pg_list.hpp"
 #include <inttypes.h>
@@ -54,100 +51,6 @@ extern "C" {
 namespace pgduckdb {
 DDLType top_level_duckdb_ddl_type = DDLType::NONE;
 bool refreshing_materialized_view = false;
-
-bool
-IsMotherDuckView(Form_pg_class relation) {
-	if (relation->relkind != RELKIND_VIEW) {
-		return false;
-	}
-
-	SPI_connect();
-
-	Oid saved_userid;
-	int sec_context;
-	auto save_nestlevel = NewGUCNestLevel();
-	SetConfigOption("search_path", "pg_catalog, pg_temp", PGC_USERSET, PGC_S_SESSION);
-	SetConfigOption("duckdb.force_execution", "false", PGC_USERSET, PGC_S_SESSION);
-	GetUserIdAndSecContext(&saved_userid, &sec_context);
-	SetUserIdAndSecContext(BOOTSTRAP_SUPERUSERID, sec_context | SECURITY_LOCAL_USERID_CHANGE);
-	Oid arg_types[] = {OIDOID};
-	Datum values[] = {ObjectIdGetDatum(relation->oid)};
-	int ret = SPI_execute_with_args(R"(
-			SELECT FROM duckdb.tables WHERE relid = $1 LIMIT 1;
-								 )",
-	                                lengthof(arg_types), arg_types, values, NULL, false, 0);
-
-	if (ret != SPI_OK_SELECT) {
-		elog(ERROR, "SPI_exec failed: error code %s", SPI_result_code_string(ret));
-	}
-
-	/* Revert back to original privileges */
-	SetUserIdAndSecContext(saved_userid, sec_context);
-	AtEOXact_GUC(false, save_nestlevel);
-
-	bool found = SPI_processed > 0;
-	SPI_finish();
-	return found;
-}
-
-bool
-IsMotherDuckView(Relation relation) {
-	return IsMotherDuckView(relation->rd_rel);
-}
-
-static bool
-ContainsMotherDuckRelation(Node *node, void *context) {
-	if (node == NULL)
-		return false;
-
-	if (IsA(node, RangeVar)) {
-		RangeVar *range_var = (RangeVar *)node;
-		Oid relid = RangeVarGetRelid(range_var, AccessShareLock, true);
-		if (OidIsValid(relid)) {
-			Relation rel = relation_open(relid, AccessShareLock);
-			if (rel->rd_rel->relkind == RELKIND_VIEW || rel->rd_rel->relkind == RELKIND_RELATION) {
-				/* Check if the relation is a MotherDuck view or table */
-				if (pgduckdb::IsMotherDuckView(rel) || pgduckdb::IsDuckdbTable(rel)) {
-					relation_close(rel, NoLock);
-					return true;
-				}
-			}
-			relation_close(rel, NoLock);
-		}
-	}
-
-	/* Continue walking the tree */
-#if PG_VERSION_NUM >= 160000
-	return raw_expression_tree_walker(node, ContainsMotherDuckRelation, context);
-#else
-	return raw_expression_tree_walker(node, (bool (*)())((void *)ContainsMotherDuckRelation), context);
-#endif
-}
-
-static bool
-NeedsToBeMotherDuckView(ViewStmt *stmt, char *schema_name) {
-	if (!IsMotherDuckEnabled()) {
-		return false;
-	}
-
-	if (pgduckdb::duckdb_force_motherduck_views) {
-		return true;
-	}
-
-	if (pgduckdb::is_background_worker) {
-		return true;
-	}
-
-	if (pgduckdb::top_level_duckdb_ddl_type == DDLType::RENAME_VIEW) {
-		return true;
-	}
-
-	if (pgduckdb::IsDuckdbSchemaName(schema_name)) {
-		return true;
-	}
-
-	return pgduckdb::ContainsMotherDuckRelation(stmt->query, NULL);
-}
 
 FuncExpr *
 GetDuckdbViewExprFromQuery(Query *query) {
@@ -364,68 +267,12 @@ DropTablePreCheck(DropStmt *stmt) {
 	}
 }
 
-/*
- * This is a DROP pre-check to check if a DROP VIEW command tries to drop both
- * DuckDB and Postgres views. Doing so is not allowed within an explicit
- * transaction. It also claims the command ID
- */
-static void
-DropViewPreCheck(DropStmt *stmt) {
-	Assert(stmt->removeType == OBJECT_VIEW);
-	bool dropping_duckdb_views = false;
-	bool dropping_postgres_views = false;
-	foreach_node(List, obj, stmt->objects) {
-		/* check if view is duckdb view */
-		RangeVar *rel = makeRangeVarFromNameList(obj);
-		Oid relid = RangeVarGetRelid(rel, AccessShareLock, true);
-		if (!OidIsValid(relid)) {
-			/* Let postgres deal with this. It's possible that this is fine in
-			 * case of DROP ... IF EXISTS */
-			continue;
-		}
-
-		Relation relation = relation_open(relid, AccessShareLock);
-
-		if (pgduckdb::IsMotherDuckView(relation)) {
-			if (!dropping_duckdb_views) {
-				pgduckdb::ClaimCurrentCommandId();
-				dropping_duckdb_views = true;
-			}
-		} else {
-			dropping_postgres_views = true;
-		}
-		relation_close(relation, NoLock);
-	}
-
-	if (!pgduckdb::MixedWritesAllowed() && dropping_duckdb_views && dropping_postgres_views) {
-		elog(ERROR, "Dropping both DuckDB and non-DuckDB views in the same transaction is not supported");
-	}
-}
-
-static void DuckdbHandleCreateForeignServerStmt(Node *parsetree);
-static void DuckdbHandleAlterForeignServerStmt(Node *parsetree);
-static void DuckdbHandleCreateUserMappingStmt(Node *parsetree);
-static void DuckdbHandleAlterUserMappingStmt(Node *parsetree);
-static bool DuckdbHandleRenameViewPre(RenameStmt *stmt);
-static bool DuckdbHandleViewStmtPre(Node *parsetree, PlannedStmt *pstmt, const char *query_string);
-static void DuckdbHandleViewStmtPost(Node *parsetree);
 
 static void
-DuckdbHandleDDLPost(PlannedStmt *pstmt) {
-	Node *parsetree = pstmt->utilityStmt;
-
-	if (IsA(parsetree, ViewStmt)) {
-		/*
-		 * Handle the ViewStmt here, so that we can wrap it in a
-		 * duckdb.query(...) call.
-		 */
-		DuckdbHandleViewStmtPost(parsetree);
-	} else {
-		/* For other DDL statements, we just need to claim any CommandId that
-		 * was used during the Postgres processing of the DDL statement.
-		 */
-		pgduckdb::ClaimCurrentCommandId(true);
-	}
+DuckdbHandleDDLPost(PlannedStmt * /*pstmt*/) {
+	/* Claim any CommandId that was used during the Postgres processing of the
+	 * DDL statement. */
+	pgduckdb::ClaimCurrentCommandId(true);
 }
 
 /*
@@ -534,8 +381,8 @@ DuckdbHandleDDLPre(PlannedStmt *pstmt, const char *query_string) {
 		// the query during creation. That can easily result in data
 		// corruption. To make sure this doesn't happen we do a few things:
 		// - Wrap the resulting duckdb query in a duckdb.query() call, this
-		//   means that even if the query did not require motherduck, it will
-		//   still use duckdb execution in any future refresh calls.
+		//   means that even if the query did not originally require duckdb,
+		//   it will still use duckdb execution in any future refresh calls.
 		// - For the reverse problem, we make sure that REFRESH MATARIALIZED
 		//   VIEW ignores duckdb.force_execution (see the code comments in
 		//   ShouldTryToUseDuckdbExecution for details)
@@ -606,7 +453,7 @@ DuckdbHandleDDLPre(PlannedStmt *pstmt, const char *query_string) {
 		 * the duration of this REFRESH. See the code comment in
 		 * ShouldTryToUseDuckdbExecution for details. */
 		pgduckdb::top_level_duckdb_ddl_type = pgduckdb::DDLType::REFRESH_MATERIALIZED_VIEW;
-	} else if (IsA(parsetree, CreateSchemaStmt) && !pgduckdb::doing_motherduck_sync) {
+	} else if (IsA(parsetree, CreateSchemaStmt)) {
 		auto stmt = castNode(CreateSchemaStmt, parsetree);
 		if (stmt->schemaname) {
 			if (pgduckdb::IsDuckdbSchemaName(stmt->schemaname)) {
@@ -618,8 +465,6 @@ DuckdbHandleDDLPre(PlannedStmt *pstmt, const char *query_string) {
 			}
 		}
 		return false;
-	} else if (IsA(parsetree, ViewStmt)) {
-		return DuckdbHandleViewStmtPre(parsetree, pstmt, query_string);
 	} else if (IsA(parsetree, RenameStmt)) {
 		auto stmt = castNode(RenameStmt, parsetree);
 		if (stmt->renameType == OBJECT_SCHEMA) {
@@ -639,11 +484,6 @@ DuckdbHandleDDLPre(PlannedStmt *pstmt, const char *query_string) {
 			}
 			Relation rel = RelationIdGetRelation(relation_oid);
 
-			if (rel->rd_rel->relkind == RELKIND_VIEW) {
-				RelationClose(rel);
-				return DuckdbHandleRenameViewPre(stmt);
-			}
-
 			if (pgduckdb::IsDuckdbTable(rel)) {
 				if (pgduckdb::top_level_duckdb_ddl_type != pgduckdb::DDLType::NONE) {
 					ereport(ERROR, (errcode(ERRCODE_INVALID_TABLE_DEFINITION),
@@ -654,25 +494,13 @@ DuckdbHandleDDLPre(PlannedStmt *pstmt, const char *query_string) {
 				pgduckdb::ClaimCurrentCommandId();
 			}
 			RelationClose(rel);
-		} else if (stmt->renameType == OBJECT_VIEW ||
-		           (stmt->renameType == OBJECT_COLUMN && stmt->relationType == OBJECT_VIEW)) {
-
-			return DuckdbHandleRenameViewPre(stmt);
 		}
 
 		return false;
 	} else if (IsA(parsetree, DropStmt)) {
 		auto stmt = castNode(DropStmt, parsetree);
-		switch (stmt->removeType) {
-		case OBJECT_TABLE:
+		if (stmt->removeType == OBJECT_TABLE) {
 			DropTablePreCheck(stmt);
-			break;
-		case OBJECT_VIEW:
-			DropViewPreCheck(stmt);
-			break;
-		default:
-			/* ignore anything else */
-			break;
 		}
 		return false;
 	} else if (IsA(parsetree, AlterTableStmt)) {
@@ -690,10 +518,6 @@ DuckdbHandleDDLPre(PlannedStmt *pstmt, const char *query_string) {
 			pgduckdb::ClaimCurrentCommandId();
 		}
 
-		if (pgduckdb::IsMotherDuckView(relation)) {
-			ereport(ERROR,
-			        (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("Altering a MotherDuck view is not supported")));
-		}
 		RelationClose(relation);
 	} else if (IsA(parsetree, AlterObjectSchemaStmt)) {
 		auto stmt = castNode(AlterObjectSchemaStmt, parsetree);
@@ -707,354 +531,9 @@ DuckdbHandleDDLPre(PlannedStmt *pstmt, const char *query_string) {
 			}
 			RelationClose(rel);
 		}
-	} else if (IsA(parsetree, CreateForeignServerStmt)) {
-		DuckdbHandleCreateForeignServerStmt(parsetree);
-		return false;
-	} else if (IsA(parsetree, AlterForeignServerStmt)) {
-		DuckdbHandleAlterForeignServerStmt(parsetree);
-		return false;
-	} else if (IsA(parsetree, CreateUserMappingStmt)) {
-		DuckdbHandleCreateUserMappingStmt(parsetree);
-		return false;
-	} else if (IsA(parsetree, AlterUserMappingStmt)) {
-		DuckdbHandleAlterUserMappingStmt(parsetree);
-		return false;
 	}
 
 	return false;
-}
-
-static void
-DuckdbHandleAlterForeignServerStmt(Node *parsetree) {
-	pgduckdb::CurrentServerType = nullptr;
-	// Propagate the "TYPE" to the server options, don't validate it here though
-	auto stmt = castNode(AlterForeignServerStmt, parsetree);
-	auto server = GetForeignServerByName(stmt->servername, false);
-
-	auto duckdb_fdw_oid = get_foreign_data_wrapper_oid("duckdb", false);
-	if (server->fdwid != duckdb_fdw_oid) {
-		return; // Not our FDW, don't do anything
-	}
-
-	if (server->servertype == NULL) {
-		return; // Don't do anything quite yet, let the validator raise an error
-	}
-
-	pgduckdb::CurrentServerType = pstrdup(server->servertype);
-}
-
-static void
-DuckdbHandleCreateForeignServerStmt(Node *parsetree) {
-	pgduckdb::CurrentServerType = nullptr;
-	// Propagate the "TYPE" to the server options, don't validate it here though
-	auto stmt = castNode(CreateForeignServerStmt, parsetree);
-	if (strcmp(stmt->fdwname, "duckdb") != 0) {
-		return; // Not our FDW, don't do anything
-	}
-
-	if (stmt->servertype == NULL) {
-		return; // Don't do anything quite yet, let the validator raise an error
-	}
-
-	pgduckdb::CurrentServerType = pstrdup(stmt->servertype);
-}
-
-static void
-DuckdbHandleAlterUserMappingStmt(Node *parsetree) {
-	pgduckdb::CurrentServerOid = InvalidOid;
-	// Propagate the "servername" to the user mapping options
-	auto stmt = castNode(AlterUserMappingStmt, parsetree);
-
-	auto server = GetForeignServerByName(stmt->servername, false);
-	auto duckdb_fdw_oid = get_foreign_data_wrapper_oid("duckdb", false);
-	if (server->fdwid != duckdb_fdw_oid) {
-		return; // Not our FDW, don't do anything
-	}
-
-	pgduckdb::CurrentServerOid = server->serverid;
-}
-
-static void
-DuckdbHandleCreateUserMappingStmt(Node *parsetree) {
-	pgduckdb::CurrentServerOid = InvalidOid;
-	// Propagate the "servername" to the user mapping options
-	auto stmt = castNode(CreateUserMappingStmt, parsetree);
-
-	auto server = GetForeignServerByName(stmt->servername, false);
-	auto fdw = GetForeignDataWrapper(server->fdwid);
-	if (strcmp(fdw->fdwname, "duckdb") != 0) {
-		return; // Not our FDW, don't do anything
-	}
-
-	pgduckdb::CurrentServerOid = server->serverid;
-}
-
-#if PG_VERSION_NUM >= 150000
-static void
-UpdateDuckdbViewDefinition(Oid view_oid, const char *new_view_name) {
-	// Get the original view definition
-	Datum view_definition = DirectFunctionCall1(pg_get_viewdef, ObjectIdGetDatum(view_oid));
-	char *view_def_str = TextDatumGetCString(view_definition);
-
-	// Parse the view definition into an abstract syntax tree (AST)
-	List *parsetree_list = pg_parse_query(view_def_str);
-	if (list_length(parsetree_list) != 1) {
-		elog(ERROR, "Expected a single query, but got %d queries", list_length(parsetree_list));
-	}
-
-	RawStmt *raw_stmt = (RawStmt *)linitial(parsetree_list);
-
-	Query *query = parse_analyze_fixedparams(raw_stmt, view_def_str, NULL, 0, NULL);
-
-	FuncExpr *func_expr = pgduckdb::GetDuckdbViewExprFromQuery(query);
-	if (!func_expr) {
-		elog(ERROR, "Expected a duckdb.view function call in the view definition");
-	}
-
-	// Modify the third argument of the function call
-	if (list_length(func_expr->args) < 4) {
-		elog(ERROR, "duckdb.view function call does not have enough arguments");
-	}
-
-	Node *third_arg = (Node *)list_nth(func_expr->args, 2);
-	if (third_arg == NULL || !IsA(third_arg, Const)) {
-		elog(ERROR, "Expected the third argument of duckdb.view to be a constant");
-	}
-
-	Const *third_arg_const = (Const *)third_arg;
-	if (third_arg_const->consttype != TEXTOID) {
-		elog(ERROR, "Expected the third argument of duckdb.view to be a text constant");
-	}
-
-	third_arg_const->constvalue = CStringGetTextDatum(new_view_name);
-
-	// Reconstruct the modified view definition
-	char *new_view_def_str = pg_get_querydef(query, false);
-
-	char *current_view_name = get_rel_name(view_oid);
-	char *schema_name = get_namespace_name(get_rel_namespace(view_oid));
-	// Construct CREATE OR REPLACE VIEW statement
-	StringInfo create_view_sql = makeStringInfo();
-	appendStringInfo(create_view_sql, "CREATE OR REPLACE VIEW %s AS %s",
-	                 quote_qualified_identifier(schema_name, current_view_name), new_view_def_str);
-
-	// Execute the SQL statement to update the view
-	SPI_connect();
-	int ret = SPI_exec(create_view_sql->data, 0);
-	SPI_finish();
-
-	if (ret != SPI_OK_UTILITY) {
-		elog(ERROR, "Failed to execute CREATE OR REPLACE VIEW: %s", SPI_result_code_string(ret));
-	}
-#else
-static void
-UpdateDuckdbViewDefinition(Oid, const char *) {
-	ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-	                errmsg("Renaming DuckDB views is not supported in PostgreSQL versions older than 15.0")));
-#endif
-}
-
-static bool
-DuckdbHandleRenameViewPre(RenameStmt *stmt) {
-	Oid relation_oid = RangeVarGetRelid(stmt->relation, AccessExclusiveLock, true);
-	if (relation_oid == InvalidOid) {
-		/* Let postgres deal with this. It's possible that this is fine in
-		 * case of RENAME ... IF EXISTS */
-		return false;
-	}
-	Relation rel = RelationIdGetRelation(relation_oid);
-	if (!pgduckdb::IsMotherDuckView(rel)) {
-		RelationClose(rel);
-		return false; // Not a MotherDuck view, let Postgres handle it
-	}
-
-	if (pgduckdb::top_level_duckdb_ddl_type != pgduckdb::DDLType::NONE) {
-		ereport(ERROR, (errcode(ERRCODE_INVALID_TABLE_DEFINITION),
-		                errmsg("Only one DuckDB view can be renamed in a single statement")));
-	}
-
-	pgduckdb::top_level_duckdb_ddl_type = pgduckdb::DDLType::RENAME_VIEW;
-
-	if (stmt->renameType == OBJECT_COLUMN) {
-		ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-		                errmsg("Renaming columns in MotherDuck views is not supported")));
-	}
-
-	pgduckdb::ClaimCurrentCommandId();
-
-	auto connection = pgduckdb::DuckDBManager::GetConnection(true);
-	pgduckdb::DuckDBQueryOrThrow(*connection, pgduckdb_get_rename_relationdef(relation_oid, stmt));
-	RelationClose(rel);
-
-	/* Now we need to replace the Postgres view to reference the new name in the duckdb.view(...) call */
-	UpdateDuckdbViewDefinition(relation_oid, stmt->newname);
-
-	pgduckdb::top_level_duckdb_ddl_type = pgduckdb::DDLType::NONE;
-
-	return true;
-}
-
-static bool
-DuckdbHandleViewStmtPre(Node *parsetree, PlannedStmt *pstmt, const char *query_string) {
-	auto stmt = castNode(ViewStmt, parsetree);
-	Oid schema_oid = RangeVarGetCreationNamespace(stmt->view);
-	char *schema_name = get_namespace_name(schema_oid);
-
-	if (pgduckdb::is_background_worker || pgduckdb::top_level_duckdb_ddl_type == pgduckdb::DDLType::RENAME_VIEW) {
-		/*
-		 * Both in the background worker and during a RENAME VIEW, we've
-		 * already prepared the view query correctly (i.e. it's wrapped in a
-		 * duckdb.view(...)) call. So we don't need to wrap it here again. We
-		 * also don't need to create the view in DuckDB in these cases, because
-		 * it's already there. So this is just a no-op.
-		 *
-		 * We do want to claim the current command ID though, as well as making
-		 * sure our Post hook is fired.
-		 */
-		pgduckdb::ClaimCurrentCommandId();
-		return true;
-	}
-
-	if (!pgduckdb::NeedsToBeMotherDuckView(stmt, schema_name)) {
-		// Let Postgres handle this view
-		return false;
-	}
-
-	pgduckdb::ClaimCurrentCommandId();
-
-	if (stmt->withCheckOption != NO_CHECK_OPTION) {
-		ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-		                errmsg("views with WITH CHECK OPTION are not supported in DuckDB")));
-	}
-
-	if (stmt->options != NIL) {
-		ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("views with in DuckDB do not support WITH")));
-	}
-
-	if (stmt->view->relpersistence != RELPERSISTENCE_PERMANENT) {
-		ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("TEMPORARY views are not supported in DuckDB")));
-	}
-
-	/* This logic is copied from DefineView in the Postgres source code */
-	RawStmt *rawstmt = makeNode(RawStmt);
-	rawstmt->stmt = stmt->query;
-	rawstmt->stmt_location = pstmt->stmt_location;
-	rawstmt->stmt_len = pstmt->stmt_len;
-#if PG_VERSION_NUM >= 150000
-	Query *viewParse = parse_analyze_fixedparams(rawstmt, query_string, NULL, 0, NULL);
-#else
-	Query *viewParse = parse_analyze(rawstmt, query_string, NULL, 0, NULL);
-#endif
-
-	/*
-	 * The grammar should ensure that the result is a single SELECT Query.
-	 * However, it doesn't forbid SELECT INTO, so we have to check for that.
-	 */
-	if (!IsA(viewParse, Query))
-		elog(ERROR, "unexpected parse analysis result");
-	if (viewParse->utilityStmt != NULL && IsA(viewParse->utilityStmt, CreateTableAsStmt))
-		ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("views must not contain SELECT INTO")));
-	if (viewParse->commandType != CMD_SELECT)
-		elog(ERROR, "unexpected parse analysis result");
-
-	/*
-	 * Check for unsupported cases.  These tests are redundant with ones in
-	 * DefineQueryRewrite(), but that function will complain about a bogus ON
-	 * SELECT rule, and we'd rather the message complain about a view.
-	 */
-	if (viewParse->hasModifyingCTE)
-		ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-		                errmsg("views must not contain data-modifying statements in WITH")));
-	/* END OF COPIED LOGIC */
-
-	char *duckdb_query_string = pgduckdb_get_querydef((Query *)copyObjectImpl(viewParse));
-	List *db_and_schema = pgduckdb_db_and_schema(schema_name, "duckdb");
-
-	char *duckdb_db = (char *)linitial(db_and_schema);
-	char *duckdb_schema = (char *)lsecond(db_and_schema);
-
-	char *function_call =
-	    psprintf("duckdb.view(%s, %s, %s, %s)", quote_literal_cstr(duckdb_db), quote_literal_cstr(duckdb_schema),
-	             quote_literal_cstr(stmt->view->relname), quote_literal_cstr(duckdb_query_string));
-
-	RawStmt *wrapped_query = EntrenchColumnsFromCall(viewParse, function_call, &query_string);
-
-	MemoryContext query_context = GetMemoryChunkContext(stmt->query);
-	MemoryContext oldcontext = MemoryContextSwitchTo(query_context);
-	stmt->query = (Node *)copyObjectImpl(wrapped_query->stmt);
-	MemoryContextSwitchTo(oldcontext);
-
-	char *create_view_string = pgduckdb_get_viewdef(stmt, schema_name, stmt->view->relname, duckdb_query_string);
-
-	/* We're doing a cross-database writes, so want to use a transaction to
-	 * limit the duration of inconsistency. */
-	auto connection = pgduckdb::DuckDBManager::GetConnection(true);
-	pgduckdb::DuckDBQueryOrThrow(*connection, create_view_string);
-	return true;
-}
-
-static void
-DuckdbHandleViewStmtPost(Node *parsetree) {
-	auto stmt = castNode(ViewStmt, parsetree);
-
-	Relation rel = relation_openrv(stmt->view, AccessShareLock);
-	Oid relid = rel->rd_id;
-	auto default_db = pgduckdb::DuckDBManager::Get().GetDefaultDBName();
-	char *postgres_schema_name = get_namespace_name(rel->rd_rel->relnamespace);
-
-	const char *duckdb_db = (const char *)linitial(pgduckdb_db_and_schema(postgres_schema_name, "duckdb"));
-	relation_close(rel, NoLock);
-
-	Oid arg_types[] = {OIDOID, TEXTOID, TEXTOID, TEXTOID};
-	Datum values[] = {ObjectIdGetDatum(relid), CStringGetTextDatum(duckdb_db), 0,
-	                  CStringGetTextDatum(default_db.c_str())};
-	char nulls[] = {' ', ' ', 'n', ' '};
-
-	if (pgduckdb::doing_motherduck_sync) {
-		values[2] = CStringGetTextDatum(pgduckdb::current_motherduck_catalog_version);
-		nulls[2] = ' ';
-	}
-
-	SPI_connect();
-
-	Oid saved_userid;
-	int sec_context;
-	auto save_nestlevel = NewGUCNestLevel();
-	SetConfigOption("search_path", "pg_catalog, pg_temp", PGC_USERSET, PGC_S_SESSION);
-	GetUserIdAndSecContext(&saved_userid, &sec_context);
-	SetUserIdAndSecContext(BOOTSTRAP_SUPERUSERID, sec_context | SECURITY_LOCAL_USERID_CHANGE);
-
-	pgduckdb::pg::SetForceAllowWrites(true);
-	int ret = SPI_execute_with_args(R"(
-			INSERT INTO duckdb.tables (relid, duckdb_db, motherduck_catalog_version, default_database)
-			VALUES ($1, $2, $3, $4)
-			ON CONFLICT (relid) DO UPDATE SET
-				duckdb_db = EXCLUDED.duckdb_db,
-				motherduck_catalog_version = EXCLUDED.motherduck_catalog_version,
-				default_database = EXCLUDED.default_database
-			)",
-	                                lengthof(arg_types), arg_types, values, nulls, false, 0);
-	pgduckdb::pg::SetForceAllowWrites(false);
-
-	/* Revert back to original privileges */
-	SetUserIdAndSecContext(saved_userid, sec_context);
-	AtEOXact_GUC(false, save_nestlevel);
-
-	if (ret != SPI_OK_INSERT) {
-		elog(ERROR, "SPI_exec failed: error code %s", SPI_result_code_string(ret));
-	}
-
-	SPI_finish();
-
-	ObjectAddress view_address = {
-	    .classId = RelationRelationId,
-	    .objectId = relid,
-	    .objectSubId = 0,
-	};
-	pgduckdb::RecordDependencyOnMDServer(&view_address);
-	ATExecChangeOwner(relid, pgduckdb::MotherDuckPostgresUserOid(), false, AccessExclusiveLock);
-
-	pgduckdb::ClaimCurrentCommandId(true);
 }
 
 static void
@@ -1102,9 +581,8 @@ DuckdbShouldCallDDLHooks(PlannedStmt *pstmt) {
 	Node *parsetree = pstmt->utilityStmt;
 
 	/*
-	 * Normally we want to call IsExtensionRegistered for any activity. That
-	 * way we initialize our cache, and more importantly trigger start of the
-	 * background worker to sync MotherDuck tables.
+	 * Normally we want to call IsExtensionRegistered for any activity so we
+	 * initialize our cache.
 	 *
 	 * However, there are certain commands related to transaction isolation
 	 * that Postgres does not allow to run after any other query. So the
@@ -1287,61 +765,11 @@ DECLARE_PG_FUNCTION(duckdb_create_table_trigger) {
 	if (is_temporary) {
 		pgduckdb::RegisterDuckdbTempTable(relid);
 	} else {
-		if (!pgduckdb::IsMotherDuckEnabled()) {
-			elog(ERROR, "Only TEMP tables are supported in DuckDB if MotherDuck support is not enabled");
-		}
-
-		Oid saved_userid;
-		int sec_context;
-		const char *postgres_schema_name = get_namespace_name_or_temp(get_rel_namespace(relid));
-		const char *duckdb_db = (const char *)linitial(pgduckdb_db_and_schema(postgres_schema_name, "duckdb"));
-		auto default_db = pgduckdb::DuckDBManager::Get().GetDefaultDBName();
-
-		Oid arg_types[] = {OIDOID, TEXTOID, TEXTOID, TEXTOID};
-		Datum values[] = {relid_datum, CStringGetTextDatum(duckdb_db), 0, CStringGetTextDatum(default_db.c_str())};
-		char nulls[] = {' ', ' ', 'n', ' '};
-
-		if (pgduckdb::doing_motherduck_sync) {
-			values[2] = CStringGetTextDatum(pgduckdb::current_motherduck_catalog_version);
-			nulls[2] = ' ';
-		}
-
-		GetUserIdAndSecContext(&saved_userid, &sec_context);
-		SetUserIdAndSecContext(BOOTSTRAP_SUPERUSERID, sec_context | SECURITY_LOCAL_USERID_CHANGE);
-		pgduckdb::pg::SetForceAllowWrites(true);
-		ret = SPI_execute_with_args(R"(
-			INSERT INTO duckdb.tables (relid, duckdb_db, motherduck_catalog_version, default_database)
-			VALUES ($1, $2, $3, $4)
-			)",
-		                            lengthof(arg_types), arg_types, values, nulls, false, 0);
-		pgduckdb::pg::SetForceAllowWrites(false);
-
-		/* Revert back to original privileges */
-		SetUserIdAndSecContext(saved_userid, sec_context);
-
-		if (ret != SPI_OK_INSERT) {
-			elog(ERROR, "SPI_exec failed: error code %s", SPI_result_code_string(ret));
-		}
-
-		ObjectAddress table_address = {
-		    .classId = RelationRelationId,
-		    .objectId = relid,
-		    .objectSubId = 0,
-		};
-		pgduckdb::RecordDependencyOnMDServer(&table_address);
-		ATExecChangeOwner(relid, pgduckdb::MotherDuckPostgresUserOid(), false, AccessExclusiveLock);
+		elog(ERROR, "Only TEMP tables are supported in DuckDB");
 	}
 
 	AtEOXact_GUC(false, save_nestlevel);
 	SPI_finish();
-
-	if (pgduckdb::doing_motherduck_sync) {
-		/*
-		 * We don't want to forward DDL to DuckDB because we're syncing the
-		 * tables that are already there.
-		 */
-		PG_RETURN_NULL();
-	}
 
 	pgduckdb::ClaimCurrentCommandId(true);
 
@@ -1432,7 +860,7 @@ DECLARE_PG_FUNCTION(duckdb_drop_trigger) {
 	SetConfigOption("search_path", "pg_catalog, pg_temp", PGC_USERSET, PGC_S_SESSION);
 	SetConfigOption("duckdb.force_execution", "false", PGC_USERSET, PGC_S_SESSION);
 
-	if (!pgduckdb::doing_motherduck_sync) {
+	{
 		int ret = SPI_exec(R"(
 			SELECT object_identity
 			FROM pg_catalog.pg_event_trigger_dropped_objects()
@@ -1560,43 +988,13 @@ DECLARE_PG_FUNCTION(duckdb_drop_trigger) {
 	int64 deleted_duckdb_relations = 0;
 
 	/*
-	 * Now forward the DROP to DuckDB... but only if MotherDuck is actually
-	 * enabled. It's possible for MotherDuck tables to exist in Postgres exist
-	 * even if MotherDuck is disabled. This can happen when people reconfigure
-	 * their Postgres settings to disable MotherDuck after first having it
-	 * enabled. In that case we don't automatically drop the orphan tables in
-	 * Postgres. By not forwarding the DROP to DuckDB we allow people to
-	 * manually clean them up.
-	 *
-	 * It's also extremely important that we don't forward the DROP to DuckDB
-	 * if we're currently syncing the MotherDuck catalog. Otherwise we would
-	 * actually cause the tables to be dropped in MotherDuck as well, even if
-	 * the DROP is only meant to replace the existing Postgres shell table with
-	 * a new version.
+	 * Non-temp DuckDB tables/views were only supported with MotherDuck, so
+	 * without MotherDuck only temporary DuckDB tables exist. The non-temp case
+	 * is handled below by the temp-table loop.
 	 */
-	if (pgduckdb::IsMotherDuckEnabled() && !pgduckdb::doing_motherduck_sync) {
-		for (uint64_t proc = 0; proc < SPI_processed; ++proc) {
-			if (!connection) {
-				/* We're going to run multiple queries in DuckDB, so we need to
-				 * start a transaction to ensure ACID guarantees hold. */
-				connection = pgduckdb::DuckDBManager::GetConnection(true);
-			}
-			HeapTuple tuple = SPI_tuptable->vals[proc];
-
-			char *postgres_schema_name = SPI_getvalue(tuple, SPI_tuptable->tupdesc, 1);
-			char *table_name = SPI_getvalue(tuple, SPI_tuptable->tupdesc, 2);
-			char *object_type = SPI_getvalue(tuple, SPI_tuptable->tupdesc, 3);
-			char *drop_query =
-			    psprintf("DROP %s IF EXISTS %s.%s", object_type,
-			             pgduckdb_db_and_schema_string(postgres_schema_name, "duckdb"), quote_identifier(table_name));
-			pgduckdb::DuckDBQueryOrThrow(*connection, drop_query);
-
-			deleted_duckdb_relations++;
-		}
-	}
 
 	/*
-	 * And now we basically do the same thing as above, but for TEMP tables.
+	 * And now we handle TEMP tables.
 	 * For those we need to check our in-memory temporary_duckdb_tables set.
 	 */
 	ret = SPI_exec(R"(
@@ -1740,9 +1138,8 @@ DECLARE_PG_FUNCTION(duckdb_alter_table_trigger) {
 
 	/* if we inserted a row it was a duckdb table */
 	auto is_possibly_duckdb_table = SPI_processed > 0;
-	if (!is_possibly_duckdb_table || pgduckdb::doing_motherduck_sync) {
-		/* No DuckDB tables were altered, or we don't want to forward DDL to
-		 * DuckDB because we're syncing with MotherDuck */
+	if (!is_possibly_duckdb_table) {
+		/* No DuckDB tables were altered */
 		SPI_finish();
 		PG_RETURN_NULL();
 	}
@@ -1800,53 +1197,12 @@ DECLARE_PG_FUNCTION(duckdb_alter_table_trigger) {
 }
 
 /*
- * This event trigger is called when a GRANT statement is executed. We use it to
- * block GRANTs on DuckDB tables. We allow grants on schemas though.
+ * This event trigger is called when a GRANT statement is executed. Kept as a
+ * no-op placeholder because the extension SQL still wires it.
  */
 DECLARE_PG_FUNCTION(duckdb_grant_trigger) {
 	if (!CALLED_AS_EVENT_TRIGGER(fcinfo)) /* internal error */
 		elog(ERROR, "not fired by event trigger manager");
-
-	if (!pgduckdb::IsExtensionRegistered()) {
-		/*
-		 * We're not installed, so don't mess with the query. Normally this
-		 * shouldn't happen, but better safe than sorry.
-		 */
-		PG_RETURN_NULL();
-	}
-
-	EventTriggerData *trigdata = (EventTriggerData *)fcinfo->context;
-	Node *parsetree = trigdata->parsetree;
-	if (!IsA(parsetree, GrantStmt)) {
-		/*
-		 * Not a GRANT statement, so don't mess with the query. This is not
-		 * expected though.
-		 */
-		PG_RETURN_NULL();
-	}
-
-	GrantStmt *stmt = castNode(GrantStmt, parsetree);
-	if (stmt->objtype != OBJECT_TABLE) {
-		/* We only care about blocking table grants */
-		PG_RETURN_NULL();
-	}
-
-	if (stmt->targtype != ACL_TARGET_OBJECT) {
-		/*
-		 * We only care about blocking exact object grants. We don't want to
-		 * block ALL IN SCHEMA or ALTER DEFAULT PRIVELEGES.
-		 */
-		PG_RETURN_NULL();
-	}
-
-	foreach_node(RangeVar, object, stmt->objects) {
-		Oid relation_oid = RangeVarGetRelid(object, AccessShareLock, false);
-		Relation relation = RelationIdGetRelation(relation_oid);
-		if (pgduckdb::IsMotherDuckTable(relation)) {
-			elog(ERROR, "MotherDuck tables do not support GRANT");
-		}
-		RelationClose(relation);
-	}
 
 	PG_RETURN_NULL();
 }

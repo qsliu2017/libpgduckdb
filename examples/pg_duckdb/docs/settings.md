@@ -6,7 +6,7 @@
 
 ### `duckdb.force_execution`
 
-Forces queries to use DuckDB execution. This is only necessary when accessing only Postgres tables in a query. As soon as you use a DuckDB-only feature, DuckDB execution will be used automatically. DuckDB-only features include reading from DuckDB/MotherDuck tables, using DuckDB functions (like `read_parquet`), or `COPY` to remote storage (e.g., `s3://`). If you use PgBouncer you can add this setting to `track_extra_parameters` to make sure that PgBouncer correctly syncs this value across server connections based on what the client has set it to.
+Forces queries to use DuckDB execution. This is only necessary when accessing only Postgres tables in a query. As soon as you use a DuckDB-only feature, DuckDB execution will be used automatically. DuckDB-only features include reading from DuckDB tables, using DuckDB functions (like `read_parquet`), or `COPY` to remote storage (e.g., `s3://`). If you use PgBouncer you can add this setting to `track_extra_parameters` to make sure that PgBouncer correctly syncs this value across server connections based on what the client has set it to.
 
 - **Default**: `false`
 - **Access**: General
@@ -24,7 +24,7 @@ Sets the default collation to use for DuckDB string operations and sorting. This
 
 ### `duckdb.postgres_role`
 
-Specifies the Postgres role that is allowed to use DuckDB execution, manage secrets, and create MotherDuck tables. Defaults to superusers only. If this is configured, but the role does not exist when running `CREATE EXTENSION pg_duckdb`, it will be created automatically. This role will have access to DuckDB secrets and data in MotherDuck.
+Specifies the Postgres role that is allowed to use DuckDB execution and manage secrets. Defaults to superusers only. If this is configured, but the role does not exist when running `CREATE EXTENSION pg_duckdb`, it will be created automatically. This role will have access to DuckDB secrets.
 
 - **Default**: `""`
 - **Access**: Requires restart
@@ -110,22 +110,6 @@ The maximum number of PostgreSQL workers used for a single Postgres scan, simila
 The maximum number of DuckDB threads used for a single Postgres scan. This setting controls parallelism within DuckDB when scanning PostgreSQL tables.
 
 - **Default**: `2`
-- **Access**: General
-
-## MotherDuck
-
-### `duckdb.force_motherduck_views`
-
-Forces all views to be created in MotherDuck, even if they don't use MotherDuck tables. This setting is useful when you want to ensure all views are stored in the cloud database for consistency.
-
-- **Default**: `false`
-- **Access**: General
-
-### `duckdb.motherduck_session_hint`
-
-The session hint to use for MotherDuck connections. This setting allows you to provide additional connection parameters or hints for MotherDuck integration.
-
-- **Default**: `""` (empty string)
 - **Access**: General
 
 ## Advanced Usage

@@ -20,8 +20,6 @@ Oid DuckdbJsonOid();
 Oid DuckdbTableAmOid();
 bool IsDuckdbTable(Form_pg_class relation);
 bool IsDuckdbTable(Relation relation);
-bool IsMotherDuckTable(Form_pg_class relation);
-bool IsMotherDuckTable(Relation relation);
 bool IsDuckdbExecutionAllowed();
 void RequireDuckdbExecution();
 } // namespace pgduckdb

@@ -38,11 +38,9 @@ extern "C" {
 #include "pgduckdb/vendor/pg_list.hpp"
 }
 
-#include "pgduckdb/pgduckdb.h"
 #include "pgduckdb/pgduckdb_table_am.hpp"
 #include "pgduckdb/pgduckdb_duckdb.hpp"
 #include "pgduckdb/pgduckdb_metadata_cache.hpp"
-#include "pgduckdb/pgduckdb_userdata_cache.hpp"
 
 extern "C" {
 bool outermost_query = true;
@@ -491,15 +489,6 @@ pgduckdb_db_and_schema(const char *postgres_schema_name, const char *duckdb_tabl
 		return list_make2((void *)dbname, (void *)"main");
 	}
 
-	/* These are MotherDuck tables, so we need credentials to access them */
-	if (!pgduckdb::IsMotherDuckEnabled()) {
-		ereport(ERROR,
-		        (errcode(ERRCODE_INVALID_AUTHORIZATION_SPECIFICATION),
-		         errmsg("MotherDuck tables cannot be accessed without MotherDuck credentials"),
-		         errhint("Configure MotherDuck credentials for this user using: CREATE USER MAPPING FOR CURRENT_USER "
-		                 "SERVER motherduck OPTIONS (token '<your token>');")));
-	}
-
 	if (!pgduckdb::IsDuckdbSchemaName(postgres_schema_name)) {
 		auto dbname = pgduckdb::DuckDBManager::Get().GetDefaultDBName().c_str();
 		return list_make2((void *)dbname, (void *)postgres_schema_name);
@@ -649,8 +638,6 @@ pgduckdb_get_tabledef(Oid relation_oid) {
 		// allowed
 	} else if (relation->rd_rel->relpersistence != RELPERSISTENCE_PERMANENT) {
 		elog(ERROR, "Only TEMP and non-UNLOGGED tables are supported in DuckDB");
-	} else if (relation->rd_rel->relowner != pgduckdb::MotherDuckPostgresUserOid()) {
-		elog(ERROR, "MotherDuck tables must be owned by the duckb.postgres_role");
 	}
 
 	appendStringInfo(&buffer, "TABLE %s (", relation_name);
@@ -890,7 +877,7 @@ pgduckdb_get_rename_relationdef(Oid relation_oid, RenameStmt *rename_stmt) {
 	}
 
 	Relation relation = relation_open(relation_oid, AccessShareLock);
-	Assert(pgduckdb::IsDuckdbTable(relation) || pgduckdb::IsMotherDuckView(relation));
+	Assert(pgduckdb::IsDuckdbTable(relation));
 
 	const char *postgres_schema_name = get_namespace_name_or_temp(relation->rd_rel->relnamespace);
 	const char *db_and_schema = pgduckdb_db_and_schema_string(postgres_schema_name, "duckdb");

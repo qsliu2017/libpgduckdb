@@ -17,7 +17,6 @@ Complete documentation for the pg_duckdb PostgreSQL extension.
 
 | Topic | Description |
 |-------|-------------|
-| [**MotherDuck**](motherduck.md) | Cloud analytics integration setup |
 | [**Secrets**](secrets.md) | Data lake credential management |
 | [**Compilation**](compilation.md) | Building from source instructions |
 

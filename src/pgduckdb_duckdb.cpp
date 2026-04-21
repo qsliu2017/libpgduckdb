@@ -11,14 +11,11 @@
 #include "pgduckdb/pg/permissions.hpp"
 #include "pgduckdb/pg/string_utils.hpp"
 #include "pgduckdb/pg/transactions.hpp"
-#include "pgduckdb/pgduckdb_background_worker.hpp"
-#include "pgduckdb/pgduckdb_fdw.hpp"
 #include "pgduckdb/pgduckdb_guc.hpp"
 #include "pgduckdb/pgduckdb_metadata_cache.hpp"
 #include "pgduckdb/pgduckdb_extensions.hpp"
 #include "pgduckdb/pgduckdb_secrets_helper.hpp"
 #include "pgduckdb/pgduckdb_unsupported_type_optimizer.hpp"
-#include "pgduckdb/pgduckdb_userdata_cache.hpp"
 #include "pgduckdb/pgduckdb_utils.hpp"
 #include "pgduckdb/pgduckdb_xact.hpp"
 #include "pgduckdb/scan/postgres_scan.hpp"
@@ -40,14 +37,6 @@ extern "C" {
 }
 
 namespace pgduckdb {
-
-const char *
-GetSessionHint() {
-	if (!IsEmptyString(duckdb_motherduck_session_hint)) {
-		return duckdb_motherduck_session_hint;
-	}
-	return PossiblyReuseBgwSessionHint();
-}
 
 namespace ddb {
 bool
@@ -138,51 +127,9 @@ DuckDBManager::Initialize() {
 		SET_DUCKDB_OPTION(maximum_threads);
 	}
 
-	std::string connection_string;
-
-	/*
-	 * If MotherDuck is enabled, use it to connect to DuckDB. That way DuckDB
-	 * its default database will be set to the default MotherDuck database.
-	 */
-	if (pgduckdb::IsMotherDuckEnabled()) {
-		/*
-		 * Disable web login for MotherDuck. Having support for web login could
-		 * be nice for demos, but because the received token is not shared
-		 * between backends you will get browser windows popped up. Sharing the
-		 * token across backends could be made to work but the implementing it
-		 * is not trivial, so for now we simply disable the web login.
-		 */
-		setenv("motherduck_disable_web_login", "1", 1);
-
-		std::ostringstream oss;
-		oss << "md:";
-
-		// Default database
-		auto default_database = FindMotherDuckDefaultDatabase();
-		AppendEscapedUri(oss, default_database);
-
-		oss << "?";
-
-		// Session hint
-		auto session_hint = GetSessionHint();
-		if (!IsEmptyString(session_hint)) {
-			oss << "session_hint=";
-			AppendEscapedUri(oss, session_hint);
-			oss << "&";
-		}
-
-		connection_string = oss.str();
-
-		// Token
-		auto token = FindMotherDuckToken();
-		if (token != nullptr && !AreStringEqual(token, "::FROM_ENV::")) {
-			setenv("motherduck_token", token, 1);
-		}
-	}
-
 	std::string pg_time_zone(pg::GetConfigOption("TimeZone"));
 
-	database = new duckdb::DuckDB(connection_string, &config);
+	database = new duckdb::DuckDB(/*connection_string=*/"", &config);
 
 	auto &dbconfig = duckdb::DBConfig::GetConfig(*database->instance);
 	dbconfig.storage_extensions["pgduckdb"] = duckdb::make_uniq<PostgresStorageExtension>();
@@ -208,15 +155,6 @@ DuckDBManager::Initialize() {
 	pgduckdb::DuckDBQueryOrThrow(context, "ATTACH DATABASE 'pgduckdb' (TYPE pgduckdb)");
 	pgduckdb::DuckDBQueryOrThrow(context, "ATTACH DATABASE ':memory:' AS pg_temp;");
 
-	if (pgduckdb::IsMotherDuckEnabled()) {
-		auto timeout = FindMotherDuckBackgroundCatalogRefreshInactivityTimeout();
-		if (timeout != nullptr) {
-			auto quoted_timeout = duckdb::KeywordHelper::WriteQuoted(timeout);
-			pgduckdb::DuckDBQueryOrThrow(context, "SET motherduck_background_catalog_refresh_inactivity_timeout=" +
-			                                          quoted_timeout);
-		}
-	}
-
 	if (duckdb_autoinstall_known_extensions) {
 		InstallExtensions(context);
 	}
@@ -228,7 +166,6 @@ DuckDBManager::Reset() {
 	manager_instance.connection = nullptr;
 	delete manager_instance.database;
 	manager_instance.database = nullptr;
-	UnclaimBgwSessionHint();
 }
 
 int64

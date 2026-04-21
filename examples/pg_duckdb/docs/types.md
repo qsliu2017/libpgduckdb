@@ -17,7 +17,7 @@ Able to read many [data types](https://www.postgresql.org/docs/current/datatype.
 
 ## DuckDB-only types
 
-The following types are supported only within DuckDB queries and MotherDuck tables. These types cannot be stored in regular PostgreSQL tables, but can be used temporarily within queries (e.g., when using `duckdb.query()` or when DuckDB functions return such types):
+The following types are supported only within DuckDB queries. These types cannot be stored in regular PostgreSQL tables, but can be used temporarily within queries (e.g., when using `duckdb.query()` or when DuckDB functions return such types):
 
 - `struct` - Complex structured data type with named fields
 - `map` - Key-value mapping type

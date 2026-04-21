@@ -3,8 +3,7 @@ import os
 import psycopg.errors
 import pytest
 
-from .motherduck_token_helper import create_test_user
-from .utils import Duckdb, Postgres, make_new_duckdb_connection
+from .utils import Postgres
 
 
 @pytest.fixture(scope="session")
@@ -125,41 +124,3 @@ def conn(pg):
         yield conn
 
 
-@pytest.fixture(scope="session")
-def md_test_user():
-    """Returns the test user token for MotherDuck.
-
-    This makes sure that it's the same in all the places we use it
-    """
-    return create_test_user()
-
-
-@pytest.fixture
-def md_cur(pg, default_db_name, ddb, md_test_user):
-    """A cursor to a MotherDuck enabled pg_duckdb"""
-    # We don't actually need to use ddb connection, but we include the
-    # fixture to make sure that the test database for the test is
-    # dropped+created
-    _ = ddb
-
-    pg.sql(f"CALL duckdb.enable_motherduck('{md_test_user['token']}')")
-
-    pg.search_path = f"ddb${default_db_name}, public"
-    with pg.cur() as cur:
-        cur.wait_until_schema_exists(f"ddb${default_db_name}", timeout=60)
-        yield cur
-
-
-@pytest.fixture
-def ddb(default_db_name, md_test_user):
-    """A DuckDB connection to MotherDuck
-
-    This also creates a database for the test to use.
-    """
-    ddb_con = make_new_duckdb_connection(default_db_name, md_test_user["token"])
-
-    try:
-        yield Duckdb(ddb_con)
-    finally:
-        ddb_con.execute("USE my_db")
-        ddb_con.execute(f"DROP DATABASE {default_db_name}")

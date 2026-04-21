@@ -50,23 +50,3 @@ def test_autoinstall_known_extensions(pg: Postgres, cur: Cursor):
         "SELECT * FROM duckdb.query($$ FROM duckdb_extensions() SELECT installed, loaded WHERE extension_name = 'prql' $$)"
     ) == (True, True)
 
-    # MotherDuck should also not be installed automatically if
-    # autoinstall_known_extensions is off
-    cur.sql("CALL duckdb.recycle_ddb()")
-    cur.sql("SET duckdb.autoinstall_known_extensions = 'off'")
-    # Disabling duckdb.autoinstall_known_extensions should prevent
-    # automatically installing the MotherDuck extension.
-    pg.create_server(
-        "motherduck",
-        psycopg.sql.SQL("TYPE 'motherduck' FOREIGN DATA WRAPPER duckdb"),
-    )
-
-    cur.sql(
-        "CREATE USER MAPPING FOR CURRENT_USER SERVER motherduck OPTIONS (token 'fake-token')"
-    )
-
-    with pytest.raises(
-        psycopg.errors.InternalError,
-        match=r'motherduck.duckdb_extension" not found.',
-    ):
-        cur.sql("SELECT * FROM duckdb.query($$ SELECT 1 $$)")
