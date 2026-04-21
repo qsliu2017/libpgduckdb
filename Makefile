@@ -1,10 +1,12 @@
-.PHONY: duckdb install-duckdb clean-duckdb clean-all lintcheck check-regression-duckdb clean-regression
+# libpgduckdb: static archive of reusable pg_duckdb internals. Consumed by
+# Postgres extensions that want to embed DuckDB (see examples/pg_duckdb for the
+# full-fat consumer, examples/pg_parquet for a minimal one).
+#
+# This is NOT a Postgres extension. It has no `_PG_init`, no `.control`, no
+# `sql/`, no GUCs. Downstream extensions provide those themselves and link the
+# archive produced here.
 
-PG_DUCKDB_VERSION ?= $(shell git describe --always --dirty 2>/dev/null || echo "unknown")
-
-MODULE_big = pg_duckdb
-EXTENSION = pg_duckdb
-DATA = pg_duckdb.control $(wildcard sql/pg_duckdb--*.sql)
+.PHONY: all core-lib duckdb install-duckdb clean-lib clean-duckdb clean-all lintcheck format format-all
 
 SRCS = $(wildcard src/*.cpp src/*/*.cpp)
 OBJS = $(subst .cpp,.o, $(SRCS))
@@ -44,23 +46,8 @@ DUCKDB_BUILD_DIR = third_party/duckdb/build/$(DUCKDB_BUILD_TYPE)
 
 ifeq ($(DUCKDB_BUILD), ReleaseStatic)
 	FULL_DUCKDB_LIB = $(DUCKDB_BUILD_DIR)/libduckdb_bundle.a
-	PG_DUCKDB_LINK_FLAGS = $(FULL_DUCKDB_LIB) -lcurl
 else
 	FULL_DUCKDB_LIB = $(DUCKDB_BUILD_DIR)/src/libduckdb$(DLSUFFIX)
-	PG_DUCKDB_LINK_FLAGS = -lduckdb
-endif
-
-
-PG_DUCKDB_LINK_FLAGS += -Wl,-rpath,$(PG_LIB)/ -L$(DUCKDB_BUILD_DIR)/src -L$(PG_LIB) -lstdc++ -llz4
-
-# Ensure -lstdc++fs is included for GCC 8 builds
-CXX ?= c++
-IS_GCC := $(shell $(CXX) --version 2>/dev/null | grep -q "Free Software Foundation" && echo true || echo false)
-ifeq ($(IS_GCC),true)
-  GCC_MAJOR := $(shell $(CXX) -dumpversion 2>/dev/null | cut -d. -f1)
-  ifeq ($(GCC_MAJOR),8)
-    PG_DUCKDB_LINK_FLAGS += -lstdc++fs
-  endif
 endif
 
 ERROR_ON_WARNING ?=
@@ -82,13 +69,10 @@ override PG_CXXFLAGS += -std=c++17 ${DUCKDB_BUILD_CXX_FLAGS} ${COMPILER_FLAGS} -
 # changes to the vendored code in one place.
 override PG_CFLAGS += -Wno-declaration-after-statement
 
-SHLIB_LINK += $(PG_DUCKDB_LINK_FLAGS)
-
+# PGXS is included only for its %.o compile rules and PG_CPPFLAGS/PG_CXXFLAGS
+# plumbing into CFLAGS/CXXFLAGS. We do NOT set MODULE_big/EXTENSION/DATA: this
+# build produces a library, not an installable extension.
 include Makefile.global
-
-# Only pass the version define to the one file that needs it, so that ccache
-# doesn't invalidate everything on every commit.
-src/pgduckdb.o: PG_CPPFLAGS += -DPG_DUCKDB_VERSION="\"$(PG_DUCKDB_VERSION)\""
 
 # We need the DuckDB header files to build our own .o files. We depend on the
 # duckdb submodule HEAD, because that target pulls in the submodule which
@@ -100,30 +84,13 @@ $(OBJS): .git/modules/third_party/duckdb/HEAD
 COMPILE.cc.bc += $(PG_CPPFLAGS)
 COMPILE.cxx.bc += $(PG_CXXFLAGS)
 
-# shlib is the final output product - make duckdb and all .o dependencies
-$(shlib): $(FULL_DUCKDB_LIB) $(OBJS)
+LIBPGDUCKDB_CORE_A = libpgduckdb_core.a
 
-NO_INSTALLCHECK = 1
+$(LIBPGDUCKDB_CORE_A): $(OBJS) $(FULL_DUCKDB_LIB)
+	$(AR) rcs $@ $(OBJS)
 
-PYTEST_CONCURRENCY = auto
-
-check-regression-duckdb:
-	$(MAKE) -C test/regression check-regression-duckdb
-
-clean-regression:
-	$(MAKE) -C test/regression clean-regression
-
-# Specify AWS_REGION to make sure test output the same thing regardless of where they are run
-installcheck: all install
-	AWS_REGION=us-east-1 $(MAKE) check-regression-duckdb
-
-pycheck: all install
-	LD_LIBRARY_PATH=$(PG_LIBDIR):${LD_LIBRARY_PATH} pytest -n $(PYTEST_CONCURRENCY)
-
-check: installcheck pycheck schedulecheck
-
-schedulecheck:
-	./scripts/schedule-check.sh
+all: $(LIBPGDUCKDB_CORE_A)
+core-lib: $(LIBPGDUCKDB_CORE_A)
 
 duckdb: $(FULL_DUCKDB_LIB)
 
@@ -143,19 +110,22 @@ endif
 	$(MAKE) -C third_party/duckdb \
 	$(DUCKDB_MAKE_TARGET)
 
+# Install libduckdb into Postgres' libdir so downstream extensions (built
+# against libpgduckdb_core.a) can dlopen it at backend startup.
 ifeq ($(DUCKDB_BUILD), ReleaseStatic)
-install-duckdb: $(FULL_DUCKDB_LIB) $(shlib)
+install-duckdb: $(FULL_DUCKDB_LIB)
 else
-install-duckdb: $(FULL_DUCKDB_LIB) $(shlib)
+install-duckdb: $(FULL_DUCKDB_LIB)
 	$(install_bin) -m 755 $(FULL_DUCKDB_LIB) $(DESTDIR)$(PG_LIB)
 endif
+
+clean-lib:
+	rm -f $(LIBPGDUCKDB_CORE_A) $(OBJS)
 
 clean-duckdb:
 	rm -rf third_party/duckdb/build
 
-install: install-duckdb
-
-clean-all: clean clean-regression clean-duckdb
+clean-all: clean-lib clean-duckdb
 
 lintcheck:
 	clang-tidy $(SRCS) -- -I$(INCLUDEDIR) -I$(INCLUDEDIR_SERVER) -Iinclude $(CPPFLAGS) -std=c++17
