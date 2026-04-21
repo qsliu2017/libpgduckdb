@@ -1,0 +1,4 @@
+comment = 'Read Vortex files via DuckDB (libpgduckdb minimal example)'
+default_version = '0.1.0'
+module_pathname = '$libdir/pg_vortex'
+relocatable = false

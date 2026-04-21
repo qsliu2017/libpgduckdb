@@ -1,0 +1,53 @@
+-- pg_vortex: registration + error-surface smoke test.
+--
+-- Does NOT exercise a real Vortex file: that would require the DuckDB Vortex
+-- community extension to be installed at run time, which pulls in network.
+-- We assert:
+--   1. CREATE EXTENSION installs a single read_vortex(path) function.
+--   2. Calling read_vortex() without an AS-list raises (PG parser-level).
+--   3. Calling with a bad path flows through to DuckDB and surfaces an
+--      error (the SQLERRM body is DuckDB-owned text, so we don't echo it).
+--   4. DROP + CREATE EXTENSION works.
+--
+-- SQLERRM is suppressed in all EXCEPTION blocks so expected output stays
+-- stable across DuckDB / Vortex-extension versions.
+-- 1. Function is registered with the expected signature.
+\df read_vortex
+                          List of functions
+ Schema |    Name     | Result data type | Argument data types | Type 
+--------+-------------+------------------+---------------------+------
+ public | read_vortex | SETOF record     | path text           | func
+(1 row)
+
+-- 2. Missing AS clause -> PG parser rejects before reaching our code.
+DO $$
+BEGIN
+  PERFORM * FROM read_vortex('/ignored');
+  RAISE EXCEPTION 'expected parser to require a column definition list';
+EXCEPTION WHEN others THEN
+  RAISE NOTICE 'missing-AS errored as expected';
+END
+$$;
+NOTICE:  missing-AS errored as expected
+-- 3. With AS clause, bogus path. DuckDB raises a Catalog / IO error; we
+--    confirm we got *an* error without pinning on DuckDB's exact message.
+DO $$
+BEGIN
+  PERFORM * FROM read_vortex('/definitely/does/not/exist.vortex')
+    AS t(a int);
+  RAISE EXCEPTION 'expected read_vortex to error';
+EXCEPTION WHEN others THEN
+  RAISE NOTICE 'bad-path errored as expected';
+END
+$$;
+NOTICE:  bad-path errored as expected
+-- 4. Drop + recreate.
+DROP EXTENSION pg_vortex;
+CREATE EXTENSION pg_vortex;
+\df read_vortex
+                          List of functions
+ Schema |    Name     | Result data type | Argument data types | Type 
+--------+-------------+------------------+---------------------+------
+ public | read_vortex | SETOF record     | path text           | func
+(1 row)
+
