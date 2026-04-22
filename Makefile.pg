@@ -1,3 +1,17 @@
+# Makefile.pg -- shared PG boilerplate for libpgduckdb and its consumer
+# extensions. Hoisted from the identical examples/*/Makefile.global copies.
+#
+# Provides:
+#   - PG_CONFIG discovery + min/max version gate
+#   - PG_CONFIG-derived paths (PG_LIB, PG_LIBDIR, INCLUDEDIR, INCLUDEDIR_SERVER, PGXS)
+#   - `include $(PGXS)` -- extension build scaffolding
+#   - Autodepend pattern rules so header edits trigger rebuilds even when
+#     Postgres was not configured with --enable-depend
+#
+# Consumers include this (usually transitively via the root Makefile). The
+# root Makefile also includes it so libpgduckdb_core.a and consumer shlibs
+# share the same PG version gate and path resolution.
+
 PG_CONFIG ?= pg_config
 
 PG_MIN_VER = 14

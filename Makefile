@@ -1,37 +1,20 @@
-# libpgduckdb: static archive of reusable pg_duckdb internals. Consumed by
-# Postgres extensions that want to embed DuckDB (see examples/pg_duckdb for the
-# full-fat consumer, examples/pg_parquet for a minimal one).
-#
-# This is NOT a Postgres extension. It has no `_PG_init`, no `.control`, no
-# `sql/`, no GUCs. Deliberately does not go through PGXS -- PGXS is scaffolding
-# for building extensions, and including it here would be a layering
-# violation. We read `pg_config` directly for server headers and write our own
-# compile rules.
+# Root Makefile -- shared build infra for every libpgduckdb consumer. Consumer
+# extensions include this via `include ../../Makefile` after setting EXTENSION
+# (PGXS name, also namespaces the per-extension DuckDB build tree) and
+# EXTENSION_CONFIGS (cmake list of DuckDB extensions to statically link).
+# Consumers then `OBJS += $(CORE_OBJS)` to pull the lib sources into their shlib.
 
-.PHONY: all core-lib duckdb install-duckdb clean-lib clean-duckdb clean-all lintcheck format format-all
+.PHONY: duckdb install-duckdb clean-core clean-duckdb clean-all lintcheck format format-all
 
-PG_CONFIG ?= pg_config
-AR ?= ar
+ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 
-# PG version gate -- lib only compiles against PG 14-18 headers.
-PG_MIN_VER = 14
-PG_MAX_VER ?= 18
-PG_VER := $(shell $(PG_CONFIG) --version | sed "s/^[^ ]* \([0-9]*\).*$$/\1/" 2>/dev/null)
-ifeq ($(shell expr "$(PG_MIN_VER)" \<= "$(PG_VER)"), 0)
-$(error Minimum PostgreSQL version is $(PG_MIN_VER) (but have $(PG_VER)))
+ifndef EXTENSION
+$(error EXTENSION must be set before including this Makefile)
 endif
-ifeq ($(shell expr "$(PG_MAX_VER)" \>= "$(PG_VER)"), 0)
-$(error Maximum PostgreSQL version is $(PG_MAX_VER) (but have $(PG_VER)))
+ifndef EXTENSION_CONFIGS
+$(error EXTENSION_CONFIGS must be set before including this Makefile)
 endif
 
-PG_LIB := $(shell $(PG_CONFIG) --pkglibdir)
-INCLUDEDIR_SERVER := $(shell $(PG_CONFIG) --includedir-server)
-PG_CPPFLAGS_BASE := $(shell $(PG_CONFIG) --cppflags)
-PG_CFLAGS_BASE := $(shell $(PG_CONFIG) --cflags)
-PG_CFLAGS_SL := $(shell $(PG_CONFIG) --cflags_sl)
-
-# Shared-library suffix (.so on Linux, .dylib on macOS) -- only needed to point
-# install-duckdb at the right file.
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 	DLSUFFIX = .dylib
@@ -45,7 +28,7 @@ DUCKDB_VERSION = v1.4.3
 DUCKDB_CMAKE_VARS = -DCXX_EXTRA=-fvisibility=default -DBUILD_SHELL=0 -DBUILD_PYTHON=0 -DBUILD_UNITTESTS=0
 DUCKDB_DISABLE_ASSERTIONS ?= 0
 
-DUCKDB_BUILD_CXX_FLAGS=
+DUCKDB_BUILD_CXX_FLAGS =
 ifeq ($(DUCKDB_BUILD), Debug)
 	DUCKDB_BUILD_CXX_FLAGS = -g -O0 -D_GLIBCXX_ASSERTIONS
 	DUCKDB_BUILD_TYPE = debug
@@ -58,7 +41,11 @@ else
 	DUCKDB_MAKE_TARGET = release
 endif
 
-DUCKDB_BUILD_DIR = third_party/duckdb/build/$(DUCKDB_BUILD_TYPE)
+# Per-extension DuckDB build tree -- passed to DuckDB's Makefile via BUILD_DIR
+# so switching EXTENSION picks up a disjoint build-<EXTENSION>/<type>/ output.
+DUCKDB_BUILD_NAME = build-$(EXTENSION)
+DUCKDB_BUILD_ROOT = $(ROOT_DIR)/third_party/duckdb/$(DUCKDB_BUILD_NAME)
+DUCKDB_BUILD_DIR = $(DUCKDB_BUILD_ROOT)/$(DUCKDB_BUILD_TYPE)
 
 ifeq ($(DUCKDB_BUILD), ReleaseStatic)
 	FULL_DUCKDB_LIB = $(DUCKDB_BUILD_DIR)/libduckdb_bundle.a
@@ -75,91 +62,87 @@ endif
 
 COMPILER_FLAGS = -Wno-sign-compare -Wshadow -Wswitch -Wunused-parameter -Wunreachable-code -Wno-unknown-pragmas -Wall -Wextra $(ERROR_ON_WARNING_FLAG)
 
-# Mirror what PGXS would emit for an extension object. `-fPIC` via
-# $(PG_CFLAGS_SL) so the archive's objects are relocatable and can be pulled
-# into downstream .so / .dylib builds.
-BASE_CPPFLAGS = $(PG_CPPFLAGS_BASE) -Iinclude -isystem third_party/duckdb/src/include -isystem third_party/duckdb/third_party/re2 -isystem $(INCLUDEDIR_SERVER) $(COMPILER_FLAGS)
-BASE_CFLAGS = $(PG_CFLAGS_BASE) $(PG_CFLAGS_SL) -Wno-declaration-after-statement
-BASE_CXXFLAGS = $(PG_CFLAGS_BASE) $(PG_CFLAGS_SL) -std=c++17 $(DUCKDB_BUILD_CXX_FLAGS) $(COMPILER_FLAGS) -Wno-register -Weffc++
+# Route lib-side compile flags through PGXS's PG_CPPFLAGS / PG_CXXFLAGS /
+# PG_CFLAGS conventions. PG_CPPFLAGS flows into both C and C++ compiles, so
+# COMPILER_FLAGS lives there once; PG_CXXFLAGS only adds C++-specific flags.
+override PG_CPPFLAGS += -I$(ROOT_DIR)/include -isystem $(ROOT_DIR)/third_party/duckdb/src/include -isystem $(ROOT_DIR)/third_party/duckdb/third_party/re2 $(COMPILER_FLAGS)
+override PG_CXXFLAGS += -std=c++17 $(DUCKDB_BUILD_CXX_FLAGS) -Wno-register -Weffc++
+override PG_CFLAGS += -Wno-declaration-after-statement
 
-SRCS = $(wildcard src/*.cpp src/*/*.cpp)
-OBJS = $(subst .cpp,.o, $(SRCS))
-C_SRCS = $(wildcard src/*.c src/*/*.c)
-OBJS += $(subst .c,.o, $(C_SRCS))
+# Reusable lib sources; consumers set `OBJS = ... $(CORE_OBJS)` before
+# including this Makefile. Variables are defined before Makefile.pg (which
+# includes PGXS) so the list is visible when PGXS parses `$(shlib): $(OBJS)`
+# -- without this ordering, touching a core source would not trigger the
+# consumer shlib to relink. The rule attaching the submodule HEAD prereq,
+# on the other hand, lives AFTER the include so it doesn't preempt PGXS's
+# `all:` as the default goal.
+CORE_SRCS := $(wildcard $(ROOT_DIR)/src/*.cpp $(ROOT_DIR)/src/*/*.cpp)
+CORE_C_SRCS := $(wildcard $(ROOT_DIR)/src/*.c $(ROOT_DIR)/src/*/*.c)
+CORE_OBJS := $(CORE_SRCS:.cpp=.o) $(CORE_C_SRCS:.c=.o)
 
-DEPDIR = .deps
+include $(ROOT_DIR)/Makefile.pg
 
-# Compile rules with autodepend (matches the pattern the old Makefile.global
-# vendored from Postgres -- produces `.deps/<basename>.Po` alongside each .o).
-%.o: %.cpp
-	@mkdir -p $(DEPDIR)
-	$(CXX) $(BASE_CXXFLAGS) $(BASE_CPPFLAGS) -c -o $@ $< -MMD -MP -MF $(DEPDIR)/$(*F).Po
-
-%.o: %.c
-	@mkdir -p $(DEPDIR)
-	$(CC) $(BASE_CFLAGS) $(BASE_CPPFLAGS) -c -o $@ $< -MMD -MP -MF $(DEPDIR)/$(*F).Po
-
-# Pull in per-object dependency info if it exists.
-Po_files := $(wildcard $(DEPDIR)/*.Po)
-ifneq (,$(Po_files))
-include $(Po_files)
-endif
-
-# Rebuild when the DuckDB submodule HEAD moves.
-$(OBJS): .git/modules/third_party/duckdb/HEAD
-
-LIBPGDUCKDB_CORE_A = libpgduckdb_core.a
-
-$(LIBPGDUCKDB_CORE_A): $(OBJS) $(FULL_DUCKDB_LIB)
-	$(AR) rcs $@ $(OBJS)
-
-all: $(LIBPGDUCKDB_CORE_A)
-core-lib: $(LIBPGDUCKDB_CORE_A)
+$(CORE_OBJS): $(ROOT_DIR)/.git/modules/third_party/duckdb/HEAD
 
 duckdb: $(FULL_DUCKDB_LIB)
 
-.git/modules/third_party/duckdb/HEAD:
-	git submodule update --init --recursive
+$(ROOT_DIR)/.git/modules/third_party/duckdb/HEAD:
+	git -C $(ROOT_DIR) submodule update --init --recursive
 
-$(FULL_DUCKDB_LIB): .git/modules/third_party/duckdb/HEAD third_party/pg_duckdb_extensions.cmake
+# Patches layered on top of the submodule's pinned commit -- local until the
+# features land upstream. Re-runs on patch edits or submodule HEAD moves;
+# resets the working tree first so an updated series never stacks on an old one.
+DUCKDB_PATCHES := $(sort $(wildcard $(ROOT_DIR)/third_party/duckdb-patches/*.patch))
+DUCKDB_PATCH_STAMP = $(ROOT_DIR)/third_party/.duckdb-patched
+
+$(DUCKDB_PATCH_STAMP): $(DUCKDB_PATCHES) $(ROOT_DIR)/.git/modules/third_party/duckdb/HEAD
+	git -C $(ROOT_DIR)/third_party/duckdb checkout -- .
+	for p in $(DUCKDB_PATCHES); do \
+		git -C $(ROOT_DIR)/third_party/duckdb apply --whitespace=nowarn $$p || exit 1; \
+	done
+	touch $@
+
+$(FULL_DUCKDB_LIB): $(ROOT_DIR)/.git/modules/third_party/duckdb/HEAD $(EXTENSION_CONFIGS) $(DUCKDB_PATCH_STAMP)
 ifeq ($(DUCKDB_BUILD), ReleaseStatic)
-	mkdir -p third_party/duckdb/build/release/vcpkg_installed
+	mkdir -p $(DUCKDB_BUILD_DIR)/vcpkg_installed
 endif
+	mkdir -p $(DUCKDB_BUILD_ROOT)
 	OVERRIDE_GIT_DESCRIBE=$(DUCKDB_VERSION) \
 	GEN=$(DUCKDB_GEN) \
+	BUILD_DIR=$(DUCKDB_BUILD_NAME) \
 	CMAKE_VARS="$(DUCKDB_CMAKE_VARS)" \
 	DISABLE_SANITIZER=1 \
 	DISABLE_ASSERTIONS=$(DUCKDB_DISABLE_ASSERTIONS) \
-	EXTENSION_CONFIGS="../pg_duckdb_extensions.cmake" \
-	$(MAKE) -C third_party/duckdb \
-	$(DUCKDB_MAKE_TARGET)
+	EXTENSION_CONFIGS="$(abspath $(EXTENSION_CONFIGS))" \
+	$(MAKE) -C $(ROOT_DIR)/third_party/duckdb $(DUCKDB_MAKE_TARGET)
 
-# Install libduckdb into Postgres' libdir so downstream extensions (built
-# against libpgduckdb_core.a) can dlopen it at backend startup.
+# Install libduckdb alongside the consumer shlib. Static builds embed it, so no-op.
 ifeq ($(DUCKDB_BUILD), ReleaseStatic)
 install-duckdb: $(FULL_DUCKDB_LIB)
 else
 install-duckdb: $(FULL_DUCKDB_LIB)
-	install -m 755 $(FULL_DUCKDB_LIB) $(DESTDIR)$(PG_LIB)/
+	$(install_bin) -m 755 $(FULL_DUCKDB_LIB) $(DESTDIR)$(PG_LIB)/
 endif
 
-clean-lib:
-	rm -f $(LIBPGDUCKDB_CORE_A) $(OBJS)
-	rm -rf $(DEPDIR)
+clean-core:
+	rm -f $(CORE_OBJS)
+	rm -rf $(ROOT_DIR)/.deps
 
 clean-duckdb:
-	rm -rf third_party/duckdb/build
+	rm -rf $(ROOT_DIR)/third_party/duckdb/build-*
+	rm -f $(DUCKDB_PATCH_STAMP)
+	git -C $(ROOT_DIR)/third_party/duckdb checkout -- . 2>/dev/null || true
 
-clean-all: clean-lib clean-duckdb
+clean-all: clean-core clean-duckdb
 
 lintcheck:
-	clang-tidy $(SRCS) -- -I$(INCLUDEDIR_SERVER) -Iinclude $(PG_CPPFLAGS_BASE) -std=c++17
+	clang-tidy $(CORE_SRCS) -- -I$(INCLUDEDIR_SERVER) -I$(ROOT_DIR)/include $(shell $(PG_CONFIG) --cppflags) -std=c++17
 	ruff check
 
 format:
-	find src include -iname '*.hpp' -o -iname '*.h' -o -iname '*.cpp' -o -iname '*.c' | xargs git clang-format origin/main
+	find $(ROOT_DIR)/src $(ROOT_DIR)/include -iname '*.hpp' -o -iname '*.h' -o -iname '*.cpp' -o -iname '*.c' | xargs git clang-format origin/main
 	ruff format
 
 format-all:
-	find src include -iname '*.hpp' -o -iname '*.h' -o -iname '*.cpp' -o -iname '*.c' | xargs clang-format -i
+	find $(ROOT_DIR)/src $(ROOT_DIR)/include -iname '*.hpp' -o -iname '*.h' -o -iname '*.cpp' -o -iname '*.c' | xargs clang-format -i
 	ruff format

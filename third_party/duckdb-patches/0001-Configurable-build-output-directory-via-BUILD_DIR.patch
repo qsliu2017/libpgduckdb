@@ -1,0 +1,357 @@
+From c71068d71f69fb8e3e1b9751654bc3c9f197bd1b Mon Sep 17 00:00:00 2001
+From: qsliu <qsliu2017@outlook.com>
+Date: Wed, 22 Apr 2026 14:47:31 +0800
+Subject: [PATCH] Configurable build output directory via BUILD_DIR
+
+Adds a BUILD_DIR knob (default "build") to the top-level Makefile that
+parameterizes every build/<type> reference -- debug, release,
+bundle-library, extension_configuration, wasm_*, cldebug, clreldebug,
+reldebug, relassert, amaldebug, tidy, docs, clangd. Existing invocations
+are unaffected; parent projects embedding DuckDB can set BUILD_DIR (to
+a relative or absolute path) to isolate their build tree from other
+consumers sharing the same checkout.
+
+The value is propagated through cmake as -DDUCKDB_BUILD_DIR=..., which
+in turn emits a preprocessor define consumed by
+ExtensionRepository::BUILD_{DEBUG,RELEASE}_REPOSITORY_PATH in
+extension_install_info.hpp. This keeps the
+'INSTALL ... FROM local_build_debug' / 'local_build_release' SQL syntax
+resolving to the actual output tree rather than the previously-hardcoded
+'./build/<type>/repository'.
+---
+ CMakeLists.txt                                |  10 ++
+ Makefile                                      | 158 ++++++++++--------
+ .../duckdb/main/extension_install_info.hpp    |  13 +-
+ 3 files changed, 105 insertions(+), 76 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 3246265235..a1ec9f8e44 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -26,6 +26,16 @@ find_package(Threads REQUIRED)
+ 
+ set(DUCKDB_MODULE_BASE_DIR "${CMAKE_CURRENT_LIST_DIR}")
+ 
++# Build output tree name -- mirrors the Makefile's BUILD_DIR knob. Defaults
++# to "build" so existing invocations are unaffected. Parent projects
++# embedding DuckDB can override this (e.g. for per-consumer build isolation)
++# and the value is propagated as a compile definition so the `local_build_*`
++# extension-repository paths baked into the binary stay consistent.
++if(NOT DEFINED DUCKDB_BUILD_DIR)
++  set(DUCKDB_BUILD_DIR "build")
++endif()
++add_definitions(-DDUCKDB_BUILD_DIR=\"${DUCKDB_BUILD_DIR}\")
++
+ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+ 
+ set(CMAKE_CXX_STANDARD "11" CACHE STRING "C++ standard to enforce")
+diff --git a/Makefile b/Makefile
+index fb6adb1d09..c99bf29499 100644
+--- a/Makefile
++++ b/Makefile
+@@ -4,9 +4,21 @@ all: release
+ opt: release
+ unit: unittest
+ 
++# BUILD_DIR -- output tree name for every target below. Defaults to `build`
++# so existing invocations produce the exact same layout (build/debug,
++# build/release, build/wasm_*, ...). Parent projects embedding DuckDB can
++# override this (e.g. BUILD_DIR=build-myproj, or an absolute path) to
++# isolate their build tree from other consumers sharing the same checkout.
++BUILD_DIR ?= build
++
++# Propagated as a compile definition so the `local_build_debug` /
++# `local_build_release` extension-repository paths baked into the binary
++# stay consistent with the Makefile override.
++CMAKE_VARS := -DDUCKDB_BUILD_DIR="${BUILD_DIR}"
++
+ EXTENSION_CONFIG_STEP ?=
+ ifdef USE_MERGED_VCPKG_MANIFEST
+-	EXTENSION_CONFIG_STEP = build/extension_configuration/vcpkg.json
++	EXTENSION_CONFIG_STEP = ${BUILD_DIR}/extension_configuration/vcpkg.json
+ endif
+ 
+ GENERATOR ?=
+@@ -306,7 +318,7 @@ ifneq ("${VCPKG_TARGET_TRIPLET}", "")
+ 	CMAKE_VARS_BUILD:=${CMAKE_VARS_BUILD} -DVCPKG_TARGET_TRIPLET='${VCPKG_TARGET_TRIPLET}'
+ endif
+ ifeq (${USE_MERGED_VCPKG_MANIFEST}, 1)
+-	CMAKE_VARS:=${CMAKE_VARS} -DVCPKG_MANIFEST_DIR='${PROJ_DIR}build/extension_configuration'
++	CMAKE_VARS:=${CMAKE_VARS} -DVCPKG_MANIFEST_DIR='${PROJ_DIR}${BUILD_DIR}/extension_configuration'
+ endif
+ 
+ ifneq ("${LTO}", "")
+@@ -331,124 +343,124 @@ clean:
+ 	rm -rf build
+ 
+ debug: ${EXTENSION_CONFIG_STEP}
+-	mkdir -p ./build/debug && \
+-	cd build/debug && \
+-	cmake $(GENERATOR) $(FORCE_COLOR) ${WARNINGS_AS_ERRORS} ${FORCE_32_BIT_FLAG} ${DISABLE_UNITY_FLAG} ${DISABLE_SANITIZER_FLAG} ${STATIC_LIBCPP} ${CMAKE_VARS} ${CMAKE_VARS_BUILD} -DDEBUG_MOVE=1 -DCMAKE_BUILD_TYPE=Debug ../.. && \
++	mkdir -p ${BUILD_DIR}/debug && \
++	cd ${BUILD_DIR}/debug && \
++	cmake $(GENERATOR) $(FORCE_COLOR) ${WARNINGS_AS_ERRORS} ${FORCE_32_BIT_FLAG} ${DISABLE_UNITY_FLAG} ${DISABLE_SANITIZER_FLAG} ${STATIC_LIBCPP} ${CMAKE_VARS} ${CMAKE_VARS_BUILD} -DDEBUG_MOVE=1 -DCMAKE_BUILD_TYPE=Debug ${PROJ_DIR} && \
+ 	cmake --build . --config Debug
+ 
+ release: ${EXTENSION_CONFIG_STEP}
+-	mkdir -p ./build/release && \
+-	cd build/release && \
+-	cmake $(GENERATOR) $(FORCE_COLOR) ${WARNINGS_AS_ERRORS} ${FORCE_WARN_UNUSED_FLAG} ${FORCE_32_BIT_FLAG} ${DISABLE_UNITY_FLAG} ${DISABLE_SANITIZER_FLAG} ${STATIC_LIBCPP} ${CMAKE_VARS} ${CMAKE_VARS_BUILD} -DCMAKE_BUILD_TYPE=Release ../.. && \
++	mkdir -p ${BUILD_DIR}/release && \
++	cd ${BUILD_DIR}/release && \
++	cmake $(GENERATOR) $(FORCE_COLOR) ${WARNINGS_AS_ERRORS} ${FORCE_WARN_UNUSED_FLAG} ${FORCE_32_BIT_FLAG} ${DISABLE_UNITY_FLAG} ${DISABLE_SANITIZER_FLAG} ${STATIC_LIBCPP} ${CMAKE_VARS} ${CMAKE_VARS_BUILD} -DCMAKE_BUILD_TYPE=Release ${PROJ_DIR} && \
+ 	cmake --build . --config Release
+ 
+ wasm_mvp: ${EXTENSION_CONFIG_STEP}
+-	mkdir -p ./build/wasm_mvp && \
+-	emcmake cmake $(GENERATOR) -DWASM_LOADABLE_EXTENSIONS=1 -DBUILD_EXTENSIONS_ONLY=1 -Bbuild/wasm_mvp -DCMAKE_CXX_FLAGS="-DDUCKDB_CUSTOM_PLATFORM=wasm_mvp" -DDUCKDB_EXPLICIT_PLATFORM="wasm_mvp" ${COMMON_CMAKE_VARS} ${TOOLCHAIN_FLAGS} && \
+-	emmake make -j8 -Cbuild/wasm_mvp
++	mkdir -p ${BUILD_DIR}/wasm_mvp && \
++	emcmake cmake $(GENERATOR) -DWASM_LOADABLE_EXTENSIONS=1 -DBUILD_EXTENSIONS_ONLY=1 -B${BUILD_DIR}/wasm_mvp -DCMAKE_CXX_FLAGS="-DDUCKDB_CUSTOM_PLATFORM=wasm_mvp" -DDUCKDB_EXPLICIT_PLATFORM="wasm_mvp" ${COMMON_CMAKE_VARS} ${TOOLCHAIN_FLAGS} && \
++	emmake make -j8 -C${BUILD_DIR}/wasm_mvp
+ 
+ wasm_eh: ${EXTENSION_CONFIG_STEP}
+-	mkdir -p ./build/wasm_eh && \
+-	emcmake cmake $(GENERATOR) -DWASM_LOADABLE_EXTENSIONS=1 -DBUILD_EXTENSIONS_ONLY=1 -Bbuild/wasm_eh -DCMAKE_CXX_FLAGS="-fwasm-exceptions -DWEBDB_FAST_EXCEPTIONS=1 -DDUCKDB_CUSTOM_PLATFORM=wasm_eh" -DDUCKDB_EXPLICIT_PLATFORM="wasm_eh" ${COMMON_CMAKE_VARS} ${TOOLCHAIN_FLAGS} && \
+-	emmake make -j8 -Cbuild/wasm_eh
++	mkdir -p ${BUILD_DIR}/wasm_eh && \
++	emcmake cmake $(GENERATOR) -DWASM_LOADABLE_EXTENSIONS=1 -DBUILD_EXTENSIONS_ONLY=1 -B${BUILD_DIR}/wasm_eh -DCMAKE_CXX_FLAGS="-fwasm-exceptions -DWEBDB_FAST_EXCEPTIONS=1 -DDUCKDB_CUSTOM_PLATFORM=wasm_eh" -DDUCKDB_EXPLICIT_PLATFORM="wasm_eh" ${COMMON_CMAKE_VARS} ${TOOLCHAIN_FLAGS} && \
++	emmake make -j8 -C${BUILD_DIR}/wasm_eh
+ 
+ wasm_threads: ${EXTENSION_CONFIG_STEP}
+-	mkdir -p ./build/wasm_threads && \
+-	emcmake cmake $(GENERATOR) -DWASM_LOADABLE_EXTENSIONS=1 -DBUILD_EXTENSIONS_ONLY=1 -Bbuild/wasm_threads -DCMAKE_CXX_FLAGS="-fwasm-exceptions -DWEBDB_FAST_EXCEPTIONS=1 -DWITH_WASM_THREADS=1 -DWITH_WASM_SIMD=1 -DWITH_WASM_BULK_MEMORY=1 -DDUCKDB_CUSTOM_PLATFORM=wasm_threads -pthread" -DDUCKDB_EXPLICIT_PLATFORM="wasm_threads" ${COMMON_CMAKE_VARS} -DUSE_WASM_THREADS=1 -DCMAKE_C_FLAGS="-pthread" ${TOOLCHAIN_FLAGS} && \
+-	emmake make -j8 -Cbuild/wasm_threads
++	mkdir -p ${BUILD_DIR}/wasm_threads && \
++	emcmake cmake $(GENERATOR) -DWASM_LOADABLE_EXTENSIONS=1 -DBUILD_EXTENSIONS_ONLY=1 -B${BUILD_DIR}/wasm_threads -DCMAKE_CXX_FLAGS="-fwasm-exceptions -DWEBDB_FAST_EXCEPTIONS=1 -DWITH_WASM_THREADS=1 -DWITH_WASM_SIMD=1 -DWITH_WASM_BULK_MEMORY=1 -DDUCKDB_CUSTOM_PLATFORM=wasm_threads -pthread" -DDUCKDB_EXPLICIT_PLATFORM="wasm_threads" ${COMMON_CMAKE_VARS} -DUSE_WASM_THREADS=1 -DCMAKE_C_FLAGS="-pthread" ${TOOLCHAIN_FLAGS} && \
++	emmake make -j8 -C${BUILD_DIR}/wasm_threads
+ 
+ cldebug: ${EXTENSION_CONFIG_STEP}
+-	mkdir -p ./build/cldebug && \
+-	cd build/cldebug && \
+-	cmake $(GENERATOR) $(FORCE_COLOR) ${WARNINGS_AS_ERRORS} ${FORCE_32_BIT_FLAG} ${DISABLE_UNITY_FLAG} ${CMAKE_VARS} ${CMAKE_VARS_BUILD} -DENABLE_SANITIZER=0 -DENABLE_UBSAN=0 -DCMAKE_BUILD_TYPE=Debug ../.. && \
++	mkdir -p ${BUILD_DIR}/cldebug && \
++	cd ${BUILD_DIR}/cldebug && \
++	cmake $(GENERATOR) $(FORCE_COLOR) ${WARNINGS_AS_ERRORS} ${FORCE_32_BIT_FLAG} ${DISABLE_UNITY_FLAG} ${CMAKE_VARS} ${CMAKE_VARS_BUILD} -DENABLE_SANITIZER=0 -DENABLE_UBSAN=0 -DCMAKE_BUILD_TYPE=Debug ${PROJ_DIR} && \
+ 	cmake --build . --config Debug
+ 
+ clreldebug:
+-	mkdir -p ./build/clreldebug && \
+-	cd build/clreldebug && \
+-	cmake $(GENERATOR) $(FORCE_COLOR) ${WARNINGS_AS_ERRORS} ${FORCE_32_BIT_FLAG} ${DISABLE_UNITY_FLAG} ${STATIC_LIBCPP} ${CMAKE_VARS} -DBUILD_FTS_EXTENSION=1 -DENABLE_SANITIZER=0 -DENABLE_UBSAN=0 -DCMAKE_BUILD_TYPE=RelWithDebInfo ../.. && \
++	mkdir -p ${BUILD_DIR}/clreldebug && \
++	cd ${BUILD_DIR}/clreldebug && \
++	cmake $(GENERATOR) $(FORCE_COLOR) ${WARNINGS_AS_ERRORS} ${FORCE_32_BIT_FLAG} ${DISABLE_UNITY_FLAG} ${STATIC_LIBCPP} ${CMAKE_VARS} -DBUILD_FTS_EXTENSION=1 -DENABLE_SANITIZER=0 -DENABLE_UBSAN=0 -DCMAKE_BUILD_TYPE=RelWithDebInfo ${PROJ_DIR} && \
+ 	cmake --build . --config RelWithDebInfo
+ 
+-extension_configuration: build/extension_configuration/vcpkg.json
++extension_configuration: ${BUILD_DIR}/extension_configuration/vcpkg.json
+ 
+ extension/extension_config_local.cmake:
+ 	touch extension/extension_config_local.cmake
+ 
+-build/extension_configuration/vcpkg.json: extension/extension_config_local.cmake extension/extension_config.cmake
+-	mkdir -p ./build/extension_configuration && \
+-	cd build/extension_configuration && \
+-	cmake $(GENERATOR) $(FORCE_COLOR) ${CMAKE_VARS} -DEXTENSION_CONFIG_BUILD=TRUE -DVCPKG_BUILD=1 -DCMAKE_BUILD_TYPE=Debug ../.. && \
++${BUILD_DIR}/extension_configuration/vcpkg.json: extension/extension_config_local.cmake extension/extension_config.cmake
++	mkdir -p ${BUILD_DIR}/extension_configuration && \
++	cd ${BUILD_DIR}/extension_configuration && \
++	cmake $(GENERATOR) $(FORCE_COLOR) ${CMAKE_VARS} -DEXTENSION_CONFIG_BUILD=TRUE -DVCPKG_BUILD=1 -DCMAKE_BUILD_TYPE=Debug ${PROJ_DIR} && \
+ 	cmake --build . --config RelWithDebInfo
+ 
+ unittest: debug
+-	build/debug/test/unittest
+-	build/debug/tools/sqlite3_api_wrapper/test_sqlite3_api_wrapper
++	${BUILD_DIR}/debug/test/unittest
++	${BUILD_DIR}/debug/tools/sqlite3_api_wrapper/test_sqlite3_api_wrapper
+ 
+ unittest_release: release
+-	build/release/test/unittest
+-	build/release/tools/sqlite3_api_wrapper/test_sqlite3_api_wrapper
++	${BUILD_DIR}/release/test/unittest
++	${BUILD_DIR}/release/tools/sqlite3_api_wrapper/test_sqlite3_api_wrapper
+ 
+ unittestci:
+-	$(PYTHON) scripts/run_tests_one_by_one.py build/debug/test/unittest --time_execution
+-	build/debug/tools/sqlite3_api_wrapper/test_sqlite3_api_wrapper
++	$(PYTHON) scripts/run_tests_one_by_one.py ${BUILD_DIR}/debug/test/unittest --time_execution
++	${BUILD_DIR}/debug/tools/sqlite3_api_wrapper/test_sqlite3_api_wrapper
+ 
+ unittestarrow:
+-	build/debug/test/unittest "[arrow]"
++	${BUILD_DIR}/debug/test/unittest "[arrow]"
+ 
+ 
+ allunit: release # uses release build because otherwise allunit takes forever
+-	build/release/test/unittest "*"
++	${BUILD_DIR}/release/test/unittest "*"
+ 
+ docs:
+-	mkdir -p ./build/docs && \
++	mkdir -p ${BUILD_DIR}/docs && \
+ 	doxygen Doxyfile
+ 
+ doxygen: docs
+-	open build/docs/html/index.html
++	open ${BUILD_DIR}/docs/html/index.html
+ 
+ reldebug: ${EXTENSION_CONFIG_STEP}
+-	mkdir -p ./build/reldebug && \
+-	cd build/reldebug && \
+-	cmake $(GENERATOR) $(FORCE_COLOR) ${WARNINGS_AS_ERRORS} ${FORCE_32_BIT_FLAG} ${DISABLE_UNITY_FLAG} ${DISABLE_SANITIZER_FLAG} ${STATIC_LIBCPP} ${CMAKE_VARS} ${CMAKE_VARS_BUILD} -DCMAKE_BUILD_TYPE=RelWithDebInfo ../.. && \
++	mkdir -p ${BUILD_DIR}/reldebug && \
++	cd ${BUILD_DIR}/reldebug && \
++	cmake $(GENERATOR) $(FORCE_COLOR) ${WARNINGS_AS_ERRORS} ${FORCE_32_BIT_FLAG} ${DISABLE_UNITY_FLAG} ${DISABLE_SANITIZER_FLAG} ${STATIC_LIBCPP} ${CMAKE_VARS} ${CMAKE_VARS_BUILD} -DCMAKE_BUILD_TYPE=RelWithDebInfo ${PROJ_DIR} && \
+ 	cmake --build . --config RelWithDebInfo
+ 
+ relassert: ${EXTENSION_CONFIG_STEP}
+-	mkdir -p ./build/relassert && \
+-	cd build/relassert && \
+-	cmake $(GENERATOR) $(FORCE_COLOR) ${WARNINGS_AS_ERRORS} ${FORCE_32_BIT_FLAG} ${DISABLE_UNITY_FLAG} ${DISABLE_SANITIZER_FLAG} ${STATIC_LIBCPP} ${CMAKE_VARS} ${CMAKE_VARS_BUILD} -DFORCE_ASSERT=1 -DCMAKE_BUILD_TYPE=RelWithDebInfo ../.. && \
++	mkdir -p ${BUILD_DIR}/relassert && \
++	cd ${BUILD_DIR}/relassert && \
++	cmake $(GENERATOR) $(FORCE_COLOR) ${WARNINGS_AS_ERRORS} ${FORCE_32_BIT_FLAG} ${DISABLE_UNITY_FLAG} ${DISABLE_SANITIZER_FLAG} ${STATIC_LIBCPP} ${CMAKE_VARS} ${CMAKE_VARS_BUILD} -DFORCE_ASSERT=1 -DCMAKE_BUILD_TYPE=RelWithDebInfo ${PROJ_DIR} && \
+ 	cmake --build . --config RelWithDebInfo
+ 
+ benchmark:
+-	mkdir -p ./build/release && \
+-	cd build/release && \
+-	cmake $(GENERATOR) $(FORCE_COLOR) ${WARNINGS_AS_ERRORS} ${FORCE_WARN_UNUSED_FLAG} ${FORCE_32_BIT_FLAG} ${DISABLE_UNITY_FLAG} ${DISABLE_SANITIZER_FLAG} ${STATIC_LIBCPP} ${CMAKE_VARS} -DBUILD_BENCHMARKS=1 -DCMAKE_BUILD_TYPE=Release ../.. && \
++	mkdir -p ${BUILD_DIR}/release && \
++	cd ${BUILD_DIR}/release && \
++	cmake $(GENERATOR) $(FORCE_COLOR) ${WARNINGS_AS_ERRORS} ${FORCE_WARN_UNUSED_FLAG} ${FORCE_32_BIT_FLAG} ${DISABLE_UNITY_FLAG} ${DISABLE_SANITIZER_FLAG} ${STATIC_LIBCPP} ${CMAKE_VARS} -DBUILD_BENCHMARKS=1 -DCMAKE_BUILD_TYPE=Release ${PROJ_DIR} && \
+ 	cmake --build . --config Release
+ 
+ amaldebug:
+-	mkdir -p ./build/amaldebug && \
++	mkdir -p ${BUILD_DIR}/amaldebug && \
+ 	$(PYTHON) scripts/amalgamation.py && \
+-	cd build/amaldebug && \
+-	cmake $(GENERATOR) $(FORCE_COLOR) ${STATIC_LIBCPP} ${CMAKE_VARS} ${FORCE_32_BIT_FLAG} -DAMALGAMATION_BUILD=1 -DCMAKE_BUILD_TYPE=Debug ../.. && \
++	cd ${BUILD_DIR}/amaldebug && \
++	cmake $(GENERATOR) $(FORCE_COLOR) ${STATIC_LIBCPP} ${CMAKE_VARS} ${FORCE_32_BIT_FLAG} -DAMALGAMATION_BUILD=1 -DCMAKE_BUILD_TYPE=Debug ${PROJ_DIR} && \
+ 	cmake --build . --config Debug
+ 
+ tidy-check:
+-	mkdir -p ./build/tidy && \
+-	cd build/tidy && \
+-	cmake -DCLANG_TIDY=1 -DDISABLE_UNITY=1 -DBUILD_EXTENSIONS=parquet -DBUILD_SHELL=0 ../.. && \
+-	$(PYTHON) ../../scripts/run-clang-tidy.py -quiet ${TIDY_THREAD_PARAMETER} ${TIDY_BINARY_PARAMETER} ${TIDY_PERFORM_CHECKS}
++	mkdir -p ${BUILD_DIR}/tidy && \
++	cd ${BUILD_DIR}/tidy && \
++	cmake -DCLANG_TIDY=1 -DDISABLE_UNITY=1 -DBUILD_EXTENSIONS=parquet -DBUILD_SHELL=0 ${PROJ_DIR} && \
++	$(PYTHON) ${PROJ_DIR}/scripts/run-clang-tidy.py -quiet ${TIDY_THREAD_PARAMETER} ${TIDY_BINARY_PARAMETER} ${TIDY_PERFORM_CHECKS}
+ 
+ tidy-check-diff:
+-	mkdir -p ./build/tidy && \
+-	cd build/tidy && \
+-	cmake -DCLANG_TIDY=1 -DDISABLE_UNITY=1 -DBUILD_EXTENSIONS=parquet -DBUILD_SHELL=0 ../.. && \
+-	cd ../../ && \
+-	git diff origin/${GIT_BASE_BRANCH} . ':(exclude)tools' ':(exclude)extension' ':(exclude)test' ':(exclude)benchmark' ':(exclude)third_party' ':(exclude)src/common/adbc' ':(exclude)src/main/capi' | $(PYTHON) scripts/clang-tidy-diff.py -path build/tidy -quiet ${TIDY_THREAD_PARAMETER} ${TIDY_BINARY_PARAMETER} ${TIDY_PERFORM_CHECKS} -p1
++	mkdir -p ${BUILD_DIR}/tidy && \
++	cd ${BUILD_DIR}/tidy && \
++	cmake -DCLANG_TIDY=1 -DDISABLE_UNITY=1 -DBUILD_EXTENSIONS=parquet -DBUILD_SHELL=0 ${PROJ_DIR} && \
++	cd ${PROJ_DIR}/ && \
++	git diff origin/${GIT_BASE_BRANCH} . ':(exclude)tools' ':(exclude)extension' ':(exclude)test' ':(exclude)benchmark' ':(exclude)third_party' ':(exclude)src/common/adbc' ':(exclude)src/main/capi' | $(PYTHON) scripts/clang-tidy-diff.py -path ${BUILD_DIR}/tidy -quiet ${TIDY_THREAD_PARAMETER} ${TIDY_BINARY_PARAMETER} ${TIDY_PERFORM_CHECKS} -p1
+ 
+ tidy-fix:
+-	mkdir -p ./build/tidy && \
+-	cd build/tidy && \
+-	cmake -DCLANG_TIDY=1 -DDISABLE_UNITY=1 -DBUILD_EXTENSIONS=parquet -DBUILD_SHELL=0 ../.. && \
+-	$(PYTHON) ../../scripts/run-clang-tidy.py -fix
++	mkdir -p ${BUILD_DIR}/tidy && \
++	cd ${BUILD_DIR}/tidy && \
++	cmake -DCLANG_TIDY=1 -DDISABLE_UNITY=1 -DBUILD_EXTENSIONS=parquet -DBUILD_SHELL=0 ${PROJ_DIR} && \
++	$(PYTHON) ${PROJ_DIR}/scripts/run-clang-tidy.py -fix
+ 
+ test_compile: # test compilation of individual cpp files
+ 	$(PYTHON) scripts/amalgamation.py --compile
+@@ -484,10 +496,10 @@ third_party/sqllogictest:
+ 
+ sqlite: release | third_party/sqllogictest
+ 	git --git-dir third_party/sqllogictest/.git pull
+-	./build/release/test/unittest "[sqlitelogic]"
++	${BUILD_DIR}/release/test/unittest "[sqlitelogic]"
+ 
+ sqlsmith: debug
+-	./build/debug/third_party/sqlsmith/sqlsmith --duckdb=:memory:
++	${BUILD_DIR}/debug/third_party/sqlsmith/sqlsmith --duckdb=:memory:
+ 
+ # Bloaty: a size profiler for binaries, is a project backed by Google engineers, https://github.com/google/bloaty for more info
+ # works both on executable, libraries (-> .duckdb_extension) and on WebAssembly
+@@ -497,12 +509,12 @@ bloaty/bloaty:
+ 	mv bloaty/build/bloaty bloaty/bloaty
+ 
+ bloaty: reldebug bloaty/bloaty
+-	cd build/reldebug && dsymutil duckdb
+-	./bloaty/bloaty  build/reldebug/duckdb -d symbols -n 20 --debug-file=build/reldebug/duckdb.dSYM/Contents/Resources/DWARF/duckdb
+-	# ./bloaty/bloaty  build/reldebug/extension/parquet/parquet.duckdb_extension -d symbols -n 20 # to execute on extension
++	cd ${BUILD_DIR}/reldebug && dsymutil duckdb
++	./bloaty/bloaty  ${BUILD_DIR}/reldebug/duckdb -d symbols -n 20 --debug-file=${BUILD_DIR}/reldebug/duckdb.dSYM/Contents/Resources/DWARF/duckdb
++	# ./bloaty/bloaty  ${BUILD_DIR}/reldebug/extension/parquet/parquet.duckdb_extension -d symbols -n 20 # to execute on extension
+ 
+ clangd:
+-	cmake -DCMAKE_BUILD_TYPE=Debug ${CMAKE_VARS} -B build/clangd .
++	cmake -DCMAKE_BUILD_TYPE=Debug ${CMAKE_VARS} -B ${BUILD_DIR}/clangd .
+ 
+ coverage-check:
+ 	./scripts/coverage_check.sh
+@@ -523,7 +535,7 @@ generate-files:
+ 	$(MAKE) format-main
+ 
+ bundle-setup:
+-	cd build/release && \
++	cd ${BUILD_DIR}/release && \
+ 	rm -rf bundle && \
+ 	mkdir -p bundle && \
+ 	cp src/libduckdb_static.a bundle/. && \
+@@ -535,18 +547,18 @@ bundle-setup:
+ 	find . -name '*.a' -execdir ${AR} -x {} \;
+ 
+ bundle-library-o: bundle-setup
+-	cd build/release/bundle && \
++	cd ${BUILD_DIR}/release/bundle && \
+ 	echo ./*/*.o | xargs ${AR} cr ../libduckdb_bundle.a
+ 
+ bundle-library-obj: bundle-setup
+-	cd build/release/bundle && \
++	cd ${BUILD_DIR}/release/bundle && \
+ 	echo ./*/*.obj | xargs ${AR} cr ../libduckdb_bundle.a
+ 
+ bundle-library: release
+ 	make bundle-library-o
+ 
+ gather-libs: release
+-	cd build/release && \
++	cd ${BUILD_DIR}/release && \
+ 	rm -rf libs && \
+ 	mkdir -p libs && \
+ 	cp src/libduckdb_static.a libs/. && \
+diff --git a/src/include/duckdb/main/extension_install_info.hpp b/src/include/duckdb/main/extension_install_info.hpp
+index 6ccd1a1156..eae34cfb90 100644
+--- a/src/include/duckdb/main/extension_install_info.hpp
++++ b/src/include/duckdb/main/extension_install_info.hpp
+@@ -59,9 +59,16 @@ struct ExtensionRepository {
+ 	static constexpr const char *CORE_NIGHTLY_REPOSITORY_URL = "http://nightly-extensions.duckdb.org";
+ 	static constexpr const char *COMMUNITY_REPOSITORY_URL = "http://community-extensions.duckdb.org";
+ 
+-	//! Debugging repositories (target local, relative paths that are produced by DuckDB's build system)
+-	static constexpr const char *BUILD_DEBUG_REPOSITORY_PATH = "./build/debug/repository";
+-	static constexpr const char *BUILD_RELEASE_REPOSITORY_PATH = "./build/release/repository";
++	//! Debugging repositories (local paths produced by DuckDB's build system).
++	//! DUCKDB_BUILD_DIR mirrors the Makefile/CMake `BUILD_DIR` knob and defaults to "build" when
++	//! undefined; overriding it lets parent projects redirect the build output tree without losing
++	//! the `local_build_debug` / `local_build_release` SQL install syntax. No leading "./" so an
++	//! absolute `BUILD_DIR` does not produce a spurious `.//abs/path`.
++#ifndef DUCKDB_BUILD_DIR
++#define DUCKDB_BUILD_DIR "build"
++#endif
++	static constexpr const char *BUILD_DEBUG_REPOSITORY_PATH = DUCKDB_BUILD_DIR "/debug/repository";
++	static constexpr const char *BUILD_RELEASE_REPOSITORY_PATH = DUCKDB_BUILD_DIR "/release/repository";
+ 
+ 	//! The default is CORE
+ 	static constexpr const char *DEFAULT_REPOSITORY_URL = CORE_REPOSITORY_URL;
+-- 
+2.39.2 (Apple Git-143)
+
