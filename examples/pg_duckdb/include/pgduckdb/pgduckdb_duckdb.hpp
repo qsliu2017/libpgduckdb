@@ -100,4 +100,16 @@ private:
  */
 void InvalidateDuckDBSecretsIfInitialized();
 
+struct TypeResolver;
+
+/*
+ * The pg_duckdb-specific resolver for DuckDB <-> Postgres type mapping,
+ * covering the `duckdb.struct`/`duckdb.union`/`duckdb.map` pseudo-types
+ * (plus their array variants). Ext code that calls lib type-conversion
+ * entry points (GetPostgresDuckDBType / GetPostgresArrayDuckDBType /
+ * ConvertDuckToPostgresValue / etc.) must pass this resolver so lib can
+ * round-trip composite types.
+ */
+const TypeResolver *GetTypeResolver();
+
 } // namespace pgduckdb

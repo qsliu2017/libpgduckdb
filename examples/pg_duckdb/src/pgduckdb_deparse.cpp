@@ -742,8 +742,8 @@ RunGetTableDef(void *arg) {
 		 * precision specified. Because that means something very different in
 		 * Postgres.
 		 */
-		auto duck_type = pgduckdb::ConvertPostgresToDuckColumnType(column);
-		pgduckdb::GetPostgresDuckDBType(duck_type, true);
+		auto duck_type = pgduckdb::ConvertPostgresToDuckColumnType(column, pgduckdb::GetTypeResolver());
+		pgduckdb::GetPostgresDuckDBType(duck_type, true, pgduckdb::GetTypeResolver());
 
 		const char *column_type_name = format_type_with_typemod(column->atttypid, column->atttypmod);
 

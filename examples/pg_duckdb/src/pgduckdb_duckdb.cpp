@@ -236,6 +236,11 @@ MakePgDuckDBStorageOptions() {
 
 } // anonymous namespace
 
+const TypeResolver *
+GetTypeResolver() {
+	return &g_pg_duckdb_type_resolver;
+}
+
 // ------------------------------------------------------------------
 // ddb::DidWrites -- consulted by the xact / executor hooks to decide
 // whether a DuckDB write happened in the current statement.

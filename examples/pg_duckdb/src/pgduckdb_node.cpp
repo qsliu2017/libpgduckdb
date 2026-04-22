@@ -133,7 +133,8 @@ Duckdb_BeginCustomScan_Cpp(CustomScanState *cscanstate, EState *estate, int /*ef
 		}
 
 		for (size_t i = 0; i < prepared_result_types.size(); i++) {
-			Oid postgres_column_oid = pgduckdb::GetPostgresDuckDBType(prepared_result_types[i], true);
+			Oid postgres_column_oid =
+			    pgduckdb::GetPostgresDuckDBType(prepared_result_types[i], true, pgduckdb::GetTypeResolver());
 
 			TargetEntry *target_entry =
 			    list_nth_node(TargetEntry, duckdb_scan_state->custom_scan->custom_scan_tlist, i);
@@ -292,7 +293,7 @@ Duckdb_ExecCustomScan_Cpp(CustomScanState *node) {
 				slot->tts_isnull[col] = true;
 			} else {
 				slot->tts_isnull[col] = false;
-				if (!pgduckdb::ConvertDuckToPostgresValue(slot, value, col)) {
+				if (!pgduckdb::ConvertDuckToPostgresValue(slot, value, col, pgduckdb::GetTypeResolver())) {
 					throw duckdb::ConversionException("Value conversion failed");
 				}
 			}

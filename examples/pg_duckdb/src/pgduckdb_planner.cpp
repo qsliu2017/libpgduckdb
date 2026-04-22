@@ -74,7 +74,8 @@ CreatePlan(Query *query, bool throw_error) {
 	auto &prepared_result_types = prepared_query->GetTypes();
 
 	for (size_t i = 0; i < prepared_result_types.size(); i++) {
-		Oid postgresColumnOid = pgduckdb::GetPostgresDuckDBType(prepared_result_types[i], throw_error);
+		Oid postgresColumnOid =
+		    pgduckdb::GetPostgresDuckDBType(prepared_result_types[i], throw_error, pgduckdb::GetTypeResolver());
 
 		if (!OidIsValid(postgresColumnOid)) {
 			return nullptr;
