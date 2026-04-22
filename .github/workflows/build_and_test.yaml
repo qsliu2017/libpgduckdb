@@ -169,17 +169,8 @@ jobs:
         uses: actions/checkout@v4
 
       # TODO: wire this up once examples/pg_parquet/ is a working consumer of
-      # libpgduckdb_core.a. Intended shape (for future editor):
-      #
-      #   - install build deps (subset of pg_duckdb's -- no pytest needed)
-      #   - checkout + build PG 18 (cached)
-      #   - build libpgduckdb_core.a at repo root
-      #   - make -C examples/pg_parquet install
-      #   - run the smoke test that proves the example loads and calls
-      #     parquet.read() against a sample file
-      #
-      # For now this job just asserts that the placeholder directory hasn't
-      # quietly accumulated half-done state.
+      # libpgduckdb_core.a. examples/pg_vortex (see the pg_vortex job below)
+      # is the template to follow.
       - name: Placeholder (examples/pg_parquet not yet wired)
         run: |
           if [ -d examples/pg_parquet ]; then
@@ -187,3 +178,107 @@ jobs:
             exit 1
           fi
           echo "ok: examples/pg_parquet not present yet; nothing to build."
+
+  pg_vortex:
+    name: "Build and test examples/pg_vortex"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - version: REL_14_STABLE
+          type: Release
+        - version: REL_15_STABLE
+          type: Release
+        - version: REL_16_STABLE
+          type: Release
+        - version: REL_17_STABLE
+          type: Release
+        - version: REL_18_STABLE
+          type: ReleaseStatic
+        - version: REL_18_STABLE
+          type: Debug
+
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Test details
+        run: echo Build and test examples/pg_vortex with PostgreSQL ${{ matrix.version }} / ${{ matrix.type }}
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y build-essential libreadline-dev zlib1g-dev flex bison libxml2-dev libxslt-dev \
+            libssl-dev libxml2-utils xsltproc pkg-config libc++-dev libc++abi-dev libglib2.0-dev libtinfo6 cmake \
+            libstdc++-12-dev ninja-build libcurl4-openssl-dev liblz4-dev
+          echo "${PWD}/postgres/inst/bin:$PATH" >> $GITHUB_PATH
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ubuntu-24.04-${{ matrix.version }}-${{ matrix.type }}-vortex
+          create-symlink: true
+
+      - name: Checkout pg_duckdb code
+        uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+          path: duckdb
+
+      - name: Checkout PostgreSQL code
+        run: |
+          rm -rf postgres
+          git clone --branch ${{ matrix.version }} --single-branch --depth 1 https://github.com/postgres/postgres.git
+
+      - name: Compute Version SHAs
+        id: versions
+        run: |
+          pushd duckdb/third_party/duckdb
+          DUCKDB_SHA=`git rev-parse HEAD`
+          echo "duckdb_sha=${DUCKDB_SHA}" >> "$GITHUB_OUTPUT"
+          popd
+          pushd postgres
+          POSTGRES_SHA=`git rev-parse HEAD`
+          echo "postgres_sha=${POSTGRES_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup PG build cache
+        id: cache-pg-build
+        uses: actions/cache@v4
+        with:
+          path: postgres/inst
+          key: pg-build-ubuntu-24.04-${{ steps.versions.outputs.postgres_sha }}
+
+      - name: Build PostgreSQL code
+        if: steps.cache-pg-build.outputs.cache-hit != 'true'
+        working-directory: postgres
+        run: |
+          ./configure --prefix=$PWD/inst/ --enable-cassert --enable-debug --with-openssl --with-icu --with-libxml --with-lz4
+          make -j8 install
+
+      - name: Setup DuckDB build cache
+        id: cache-duckdb-build
+        uses: actions/cache@v4
+        with:
+          path: duckdb/third_party/duckdb/build/
+          key: duckdb-build-ubuntu-24.04-${{ steps.versions.outputs.duckdb_sha }}-ninja
+
+      - name: Build libpgduckdb_core.a + DuckDB
+        working-directory: duckdb
+        run: ERROR_ON_WARNING=1 make -j8 core-lib DUCKDB_BUILD=${{ matrix.type }}
+
+      - name: Build and install pg_vortex
+        id: build
+        working-directory: duckdb/examples/pg_vortex
+        run: make -j8 install DUCKDB_BUILD=${{ matrix.type }}
+
+      - name: Run make installcheck
+        id: installcheck
+        working-directory: duckdb/examples/pg_vortex
+        run: make installcheck DUCKDB_BUILD=${{ matrix.type }}
+
+      - name: Print regression.diffs if regression tests failed
+        if: failure() && steps.installcheck.outcome == 'failure'
+        run: cat duckdb/examples/pg_vortex/test/regression/regression.diffs && false
+
+      - name: Print postmaster.log if regression tests failed
+        if: failure() && steps.installcheck.outcome == 'failure'
+        run: cat duckdb/examples/pg_vortex/test/regression/log/postmaster.log
