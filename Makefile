@@ -65,7 +65,7 @@ COMPILER_FLAGS = -Wno-sign-compare -Wshadow -Wswitch -Wunused-parameter -Wunreac
 # Route lib-side compile flags through PGXS's PG_CPPFLAGS / PG_CXXFLAGS /
 # PG_CFLAGS conventions. PG_CPPFLAGS flows into both C and C++ compiles, so
 # COMPILER_FLAGS lives there once; PG_CXXFLAGS only adds C++-specific flags.
-override PG_CPPFLAGS += -I$(ROOT_DIR)/include -isystem $(ROOT_DIR)/third_party/duckdb/src/include -isystem $(ROOT_DIR)/third_party/duckdb/third_party/re2 $(COMPILER_FLAGS)
+override PG_CPPFLAGS += -I$(ROOT_DIR)/include -isystem $(ROOT_DIR)/third_party/duckdb/src/include -isystem $(ROOT_DIR)/third_party/duckdb/third_party/re2 -isystem $(INCLUDEDIR_SERVER) $(COMPILER_FLAGS)
 override PG_CXXFLAGS += -std=c++17 $(DUCKDB_BUILD_CXX_FLAGS) -Wno-register -Weffc++
 override PG_CFLAGS += -Wno-declaration-after-statement
 

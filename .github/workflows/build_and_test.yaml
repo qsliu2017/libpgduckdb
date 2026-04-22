@@ -129,8 +129,8 @@ jobs:
         id: cache-duckdb-build
         uses: actions/cache@v4
         with:
-          path: duckdb/third_party/duckdb/build/
-          key: duckdb-build-ubuntu-24.04-${{ steps.versions.outputs.duckdb_sha }}-ninja
+          path: duckdb/third_party/duckdb/build-pg_duckdb/
+          key: duckdb-build-ubuntu-24.04-pg_duckdb-${{ matrix.type }}-${{ steps.versions.outputs.duckdb_sha }}-${{ hashFiles('duckdb/third_party/duckdb-patches/*.patch') }}-ninja
 
       - name: Install pytest and other test requirements
         run: python3 -m pip install -r duckdb/examples/pg_duckdb/requirements.txt
@@ -258,12 +258,8 @@ jobs:
         id: cache-duckdb-build
         uses: actions/cache@v4
         with:
-          path: duckdb/third_party/duckdb/build/
-          key: duckdb-build-ubuntu-24.04-${{ steps.versions.outputs.duckdb_sha }}-ninja
-
-      - name: Build libpgduckdb_core.a + DuckDB
-        working-directory: duckdb
-        run: ERROR_ON_WARNING=1 make -j8 core-lib DUCKDB_BUILD=${{ matrix.type }}
+          path: duckdb/third_party/duckdb/build-pg_vortex/
+          key: duckdb-build-ubuntu-24.04-pg_vortex-${{ matrix.type }}-${{ steps.versions.outputs.duckdb_sha }}-${{ hashFiles('duckdb/third_party/duckdb-patches/*.patch') }}-ninja
 
       - name: Build and install pg_vortex
         id: build
