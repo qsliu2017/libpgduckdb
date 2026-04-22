@@ -1,10 +1,7 @@
 # DuckDB extensions baked into libduckdb for the pg_vortex consumer.
-#
-# Baseline (json/icu/httpfs) mirrors the pg_duckdb set so the standard SQL
-# surface works out of the box. vortex is intended to land here as well so
-# that pg_vortex.cpp can drop its runtime INSTALL/LOAD bootstrap -- add the
-# duckdb_extension_load(vortex ...) entry once the upstream repo + a
-# DuckDB-v1.4.3-compatible tag are pinned.
+# vortex is statically linked so pg_vortex.cpp doesn't need runtime
+# INSTALL/LOAD. The v0.56.0 tag is what DuckDB v1.4.3 itself pairs with
+# (see third_party/duckdb/.github/config/extensions/vortex.cmake).
 
 duckdb_extension_load(json)
 duckdb_extension_load(icu)
@@ -12,8 +9,9 @@ duckdb_extension_load(httpfs
     GIT_URL https://github.com/duckdb/duckdb-httpfs
     GIT_TAG 9c7d34977b10346d0b4cbbde5df807d1dab0b2bf
 )
-# TODO: statically link vortex here once we have a concrete GIT_URL/GIT_TAG.
-# duckdb_extension_load(vortex
-#     GIT_URL https://github.com/spiraldb/vortex-duckdb-extension
-#     GIT_TAG <pinned>
-# )
+duckdb_extension_load(vortex
+    GIT_URL https://github.com/vortex-data/duckdb-vortex
+    GIT_TAG v0.56.0
+    SUBMODULES vortex
+    APPLY_PATCHES
+)

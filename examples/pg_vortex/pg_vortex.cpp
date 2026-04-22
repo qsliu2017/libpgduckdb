@@ -44,19 +44,14 @@ namespace {
 // Lazy in-memory DuckDB instance scoped to the backend. A fresh
 // duckdb::Connection is opened per call -- the cost is trivial for this
 // minimal example and avoids the connection-cache lifecycle that the
-// full-fat pg_duckdb DuckDBManager exists to manage.
-//
-// On first create we INSTALL+LOAD the Vortex core extension so callers don't
-// have to. INSTALL hits the network once per backend lifetime; subsequent
-// backends pick up the cached download from ~/.duckdb/extensions.
+// full-fat pg_duckdb DuckDBManager exists to manage. The Vortex extension
+// is statically linked via examples/pg_vortex/pg_vortex_extensions.cmake,
+// so no runtime INSTALL/LOAD is needed.
 duckdb::DuckDB &
 GetDatabase() {
 	static std::unique_ptr<duckdb::DuckDB> instance;
 	if (!instance) {
 		instance = std::make_unique<duckdb::DuckDB>(nullptr);
-		duckdb::Connection bootstrap(*instance);
-		pgduckdb::DuckDBQueryOrThrow(bootstrap, "INSTALL vortex");
-		pgduckdb::DuckDBQueryOrThrow(bootstrap, "LOAD vortex");
 	}
 	return *instance;
 }
