@@ -1,6 +1,4 @@
-EXT_DIR = ../..
-
-include $(EXT_DIR)/Makefile.global
+include ../../../../Makefile.pg
 
 check-regression-vortex:
 	TEST_DIR=$(CURDIR) $(pg_regress_installcheck) \

@@ -1,8 +1,6 @@
 # Makefile for regression test
 
-EXT_DIR = ../..
-
-include $(EXT_DIR)/Makefile.global
+include ../../../../Makefile.pg
 
 check-regression-duckdb:
 	TEST_DIR=$(CURDIR) $(pg_regress_installcheck) \
