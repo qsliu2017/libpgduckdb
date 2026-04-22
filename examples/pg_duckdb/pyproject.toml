@@ -1,7 +1,10 @@
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"
 addopts = ["--import-mode=prepend", "--showlocals", "--tb=short"]
-pythonpath = ['tests/pyduck']
+pythonpath = ['test/pycheck']
+# Test files in this repo follow the `*_test.py` convention; pytest's default
+# pattern (`test_*.py`) doesn't pick them up.
+python_files = ["*_test.py"]
 timeout = 30
 
 # Make test discovery quicker
