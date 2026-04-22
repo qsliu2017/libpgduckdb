@@ -14,11 +14,12 @@ include ../../Makefile
 ifeq ($(DUCKDB_BUILD), ReleaseStatic)
 	PG_VORTEX_DUCKDB_LINK = $(FULL_DUCKDB_LIB) -lcurl
 else
-	PG_VORTEX_DUCKDB_LINK = -lduckdb
+	# Pass the explicit path (not -lduckdb) so the linker doesn't pick up a
+	# stale copy from postgres/inst/lib that PGXS puts earlier in -L order.
+	PG_VORTEX_DUCKDB_LINK = $(FULL_DUCKDB_LIB)
 endif
 
-SHLIB_LINK += -L$(DUCKDB_BUILD_DIR)/src $(PG_VORTEX_DUCKDB_LINK) \
-	-Wl,-rpath,$(PG_LIB)/ -L$(PG_LIB) -lstdc++ -llz4
+SHLIB_LINK += $(PG_VORTEX_DUCKDB_LINK) -Wl,-rpath,$(PG_LIB)/ -lstdc++ -llz4
 
 $(shlib): $(FULL_DUCKDB_LIB)
 

@@ -21,11 +21,12 @@ PG_DUCKDB_VERSION ?= $(shell git -C $(ROOT_DIR) describe --always --dirty 2>/dev
 ifeq ($(DUCKDB_BUILD), ReleaseStatic)
 	PG_DUCKDB_LINK = $(FULL_DUCKDB_LIB) -lcurl
 else
-	PG_DUCKDB_LINK = -lduckdb
+	# Pass the explicit path (not -lduckdb) so the linker doesn't pick up a
+	# stale copy from postgres/inst/lib that PGXS puts earlier in -L order.
+	PG_DUCKDB_LINK = $(FULL_DUCKDB_LIB)
 endif
 
-SHLIB_LINK += $(PG_DUCKDB_LINK) -L$(DUCKDB_BUILD_DIR)/src \
-	-Wl,-rpath,$(PG_LIB)/ -L$(PG_LIB) -lstdc++ -llz4
+SHLIB_LINK += $(PG_DUCKDB_LINK) -Wl,-rpath,$(PG_LIB)/ -lstdc++ -llz4
 
 # Only the TU that uses it gets the version define, so ccache doesn't
 # invalidate every object on every commit.
