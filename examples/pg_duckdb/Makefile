@@ -126,8 +126,10 @@ clean-regression:
 installcheck: all install
 	AWS_REGION=us-east-1 $(MAKE) check-regression-duckdb
 
+# The test directory is set via pyproject.toml's testpaths; passing an explicit
+# arg here makes xdist workers fail to resolve the relative path.
 pycheck: all install
-	LD_LIBRARY_PATH=$(PG_LIBDIR):${LD_LIBRARY_PATH} pytest -n $(PYTEST_CONCURRENCY) test/pycheck
+	LD_LIBRARY_PATH=$(PG_LIBDIR):${LD_LIBRARY_PATH} pytest -n $(PYTEST_CONCURRENCY)
 
 schedulecheck:
 	./scripts/schedule-check.sh

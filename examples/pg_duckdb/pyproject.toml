@@ -5,6 +5,10 @@ pythonpath = ['test/pycheck']
 # Test files in this repo follow the `*_test.py` convention; pytest's default
 # pattern (`test_*.py`) doesn't pick them up.
 python_files = ["*_test.py"]
+# Pin the test directory so xdist workers (which start with a different cwd)
+# still resolve to the right package. Without this, `pytest -n auto test/pycheck`
+# sees 19 items in the main process but 0 in each worker.
+testpaths = ["test/pycheck"]
 timeout = 30
 
 # Make test discovery quicker
