@@ -328,8 +328,10 @@ DuckDBManager::Initialize() {
 	database = new duckdb::DuckDB(/*connection_string=*/"", &config);
 
 	auto &dbconfig = duckdb::DBConfig::GetConfig(*database->instance);
+	// Pass the provider (not a frozen snapshot) so scans pick up SET-at-runtime
+	// changes to duckdb.log_pg_explain / threads_for_postgres_scan / etc.
 	dbconfig.storage_extensions["pgduckdb"] =
-	    duckdb::make_uniq<PostgresStorageExtension>(MakePgDuckDBStorageOptions(), &g_pg_duckdb_type_resolver);
+	    duckdb::make_uniq<PostgresStorageExtension>(&MakePgDuckDBStorageOptions, &g_pg_duckdb_type_resolver);
 
 	auto &extension_manager = database->instance->GetExtensionManager();
 	auto extension_active_load = extension_manager.BeginLoad("pgduckdb");

@@ -27,20 +27,32 @@ struct PostgresStorageOptions {
 };
 
 /*
+ * Signature of a per-scan options provider. Called by scan code each time
+ * it needs a fresh snapshot of options -- lets ext surface live GUC state
+ * without holding a pointer back to the attached catalog.
+ *
+ * If null, the static `options` field on PostgresStorageInfo is used
+ * instead (lib-alone default).
+ */
+using PostgresStorageOptionsProvider = PostgresStorageOptions (*)();
+
+/*
  * Storage-info blob attached to the PostgresStorageExtension and forwarded
- * by DuckDB to PostgresCatalog::Attach. Carries the consumer's options and
- * a non-owning pointer to the consumer's TypeResolver (ext-specific
+ * by DuckDB to PostgresCatalog::Attach. Carries the consumer's options (or
+ * an options-producing callback for live GUC-backed state) and a
+ * non-owning pointer to the consumer's TypeResolver (ext-specific
  * pseudo-type glue). Lifetime of `resolver` must outlive the DuckDB
  * database -- in practice ext stores it as a `const` global.
  */
 struct PostgresStorageInfo : public duckdb::StorageExtensionInfo {
-	PostgresStorageInfo() : options(), resolver(nullptr) {
+	PostgresStorageInfo() : options_provider(nullptr), options(), resolver(nullptr) {
 	}
 
 	// Not copyable: non-owning TypeResolver pointer.
 	PostgresStorageInfo(const PostgresStorageInfo &) = delete;
 	PostgresStorageInfo &operator=(const PostgresStorageInfo &) = delete;
 
+	PostgresStorageOptionsProvider options_provider;
 	PostgresStorageOptions options;
 	const TypeResolver *resolver;
 };
@@ -49,6 +61,7 @@ class PostgresStorageExtension : public duckdb::StorageExtension {
 public:
 	PostgresStorageExtension();
 	PostgresStorageExtension(const PostgresStorageOptions &options, const TypeResolver *resolver);
+	PostgresStorageExtension(PostgresStorageOptionsProvider options_provider, const TypeResolver *resolver);
 };
 
 } // namespace pgduckdb

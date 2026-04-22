@@ -20,15 +20,19 @@ PostgresCatalog::Attach(duckdb::optional_ptr<duckdb::StorageExtensionInfo> stora
                         duckdb::AttachedDatabase &db, const duckdb::string &, duckdb::AttachInfo &info,
                         duckdb::AttachOptions &) {
 	PostgresStorageOptions options;
+	PostgresStorageOptionsProvider options_provider = nullptr;
 	const TypeResolver *resolver = nullptr;
 	if (storage_info) {
 		auto *pg_info = dynamic_cast<PostgresStorageInfo *>(storage_info.get());
 		if (pg_info) {
 			options = pg_info->options;
+			options_provider = pg_info->options_provider;
 			resolver = pg_info->resolver;
 		}
 	}
-	return duckdb::make_uniq<PostgresCatalog>(db, info.path, options, resolver);
+	auto catalog = duckdb::make_uniq<PostgresCatalog>(db, info.path, options, resolver);
+	catalog->options_provider = options_provider;
+	return catalog;
 }
 
 // ------------------ Catalog API ---------------------

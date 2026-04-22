@@ -59,9 +59,17 @@ public:
 
 	// Consumer-supplied config threaded in via the PostgresStorageExtension
 	// at Attach time. `resolver` may be nullptr; options carry lib-safe
-	// defaults.
+	// defaults. When `options_provider` is non-null, scans call it to pick
+	// up live GUC state instead of the static `options` snapshot.
 	PostgresStorageOptions options;
+	PostgresStorageOptionsProvider options_provider = nullptr;
 	const TypeResolver *resolver = nullptr;
+
+	// Called by scan code each time options are needed. Honours
+	// `options_provider` when present, otherwise returns `options`.
+	PostgresStorageOptions ResolveOptions() const {
+		return options_provider ? options_provider() : options;
+	}
 
 private:
 	duckdb::case_insensitive_map_t<duckdb::unique_ptr<PostgresSchema>> schemas;

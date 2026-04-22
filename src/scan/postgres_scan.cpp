@@ -541,7 +541,7 @@ PostgresScanTableFunction::PostgresScanInitGlobal(duckdb::ClientContext &context
 	// code keeps zero knowledge of where the knobs came from (ext constructs
 	// the PostgresStorageExtension that owns them).
 	auto &catalog = duckdb::Catalog::GetCatalog(context, "pgduckdb").Cast<PostgresCatalog>();
-	return duckdb::make_uniq<PostgresScanGlobalState>(bind_data.snapshot, bind_data.rel, input, catalog.options,
+	return duckdb::make_uniq<PostgresScanGlobalState>(bind_data.snapshot, bind_data.rel, input, catalog.ResolveOptions(),
 	                                                   catalog.resolver);
 }
 

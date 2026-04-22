@@ -28,4 +28,14 @@ PostgresStorageExtension::PostgresStorageExtension(const PostgresStorageOptions 
 	storage_info = std::move(info);
 }
 
+PostgresStorageExtension::PostgresStorageExtension(PostgresStorageOptionsProvider options_provider,
+                                                   const TypeResolver *resolver) {
+	attach = PostgresCatalog::Attach;
+	create_transaction_manager = CreateTransactionManager;
+	auto info = duckdb::make_shared_ptr<PostgresStorageInfo>();
+	info->options_provider = options_provider;
+	info->resolver = resolver;
+	storage_info = std::move(info);
+}
+
 } // namespace pgduckdb
