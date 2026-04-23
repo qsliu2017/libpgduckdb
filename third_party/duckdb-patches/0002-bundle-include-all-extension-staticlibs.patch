@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: qsliu <qsliu2017@outlook.com>
+Date: Thu, 23 Apr 2026 10:55:00 +0800
+Subject: [PATCH] bundle-setup: include all static archives under extension/*/
+
+The bundle-library target's glob `lib*_extension.a` only copies the
+thin C++ wrapper archive each extension ships. Extensions that produce
+additional companion archives (notably vortex, whose Rust
+implementation lives in `libvortex_duckdb.a` and whose
+`libvortex_extension.a` is only a ~4KB wrapper with `_vortex_init_rust`
+as an UNDEFINED reference) were silently excluded from the bundle,
+causing `undefined symbol` failures at load time for static-bundle
+consumers.
+
+Widen the glob to `lib*.a` so all archives produced under
+extension/<name>/ land in the bundle.
+---
+ Makefile | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/Makefile b/Makefile
+--- a/Makefile
++++ b/Makefile
+@@ -540,7 +540,7 @@ bundle-setup:
+ 	mkdir -p bundle && \
+ 	cp src/libduckdb_static.a bundle/. && \
+ 	cp third_party/*/libduckdb_*.a bundle/. && \
+-	cp extension/*/lib*_extension.a bundle/. && \
++	cp extension/*/lib*.a bundle/. && \
+ 	find vcpkg_installed -name '*.a' -exec cp {} bundle/. \; && \
+ 	cd bundle && \
+ 	find . -name '*.a' -exec mkdir -p {}.objects \; -exec mv {} {}.objects \; && \
+--
+2.45.0
