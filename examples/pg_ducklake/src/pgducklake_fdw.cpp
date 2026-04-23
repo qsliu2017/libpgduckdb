@@ -31,10 +31,15 @@
 #include "duckdb/main/database.hpp"
 #include "duckdb/main/prepared_statement.hpp"
 
-/* Forward-declare pg_duckdb type-mapping functions (from pgduckdb_types.hpp,
- * which cannot be included directly due to its cpp_only_file guard). */
+/* Forward-declare libpgduckdb's type-mapping entry points. The full
+ * pgduckdb_types.hpp cannot be included directly due to its cpp_only_file
+ * guard; the declarations below must track the libpgduckdb signatures.
+ * PG's Oid isn't in scope here yet (postgres.h is included further down),
+ * so we use unsigned int -- Oid is typedef'd to uint32 and matches ABI. */
 namespace pgduckdb {
-unsigned int GetPostgresDuckDBType(const duckdb::LogicalType &type, bool throw_error = false);
+class TypeResolver;
+unsigned int GetPostgresDuckDBType(const duckdb::LogicalType &type, bool throw_error = false,
+                                   const TypeResolver *resolver = nullptr);
 int32_t GetPostgresDuckDBTypemod(const duckdb::LogicalType &type);
 } // namespace pgduckdb
 

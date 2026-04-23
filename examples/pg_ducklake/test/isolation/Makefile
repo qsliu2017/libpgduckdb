@@ -10,7 +10,6 @@ check-isolation:
 	--no-locale \
 	--temp-instance=./tmp_check \
 	--temp-config isolation.conf \
-	--load-extension=pg_duckdb \
 	--load-extension=pg_ducklake \
 	$(if $(TEST),$(TEST),--schedule=schedule)
 
