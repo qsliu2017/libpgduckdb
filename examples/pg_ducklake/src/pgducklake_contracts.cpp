@@ -15,6 +15,19 @@
 
 #include "pgduckdb/pgduckdb_contracts.hpp"
 #include "pgduckdb/pgduckdb_process_lock.hpp"
+#include "pgducklake/pgducklake_defs.hpp"
+
+extern "C" {
+#include "access/htup_details.h"
+#include "access/relation.h"
+#include "catalog/pg_am.h"
+#include "catalog/pg_class.h"
+#include "nodes/pg_list.h"
+#include "utils/builtins.h"
+#include "utils/lsyscache.h"
+#include "utils/rel.h"
+#include "utils/syscache.h"
+}
 
 #include <mutex>
 #include <string>
@@ -90,12 +103,72 @@ RegisterDuckdbTableAm(const char * /*name*/, const TableAmRoutine * /*am*/) {
 
 namespace pgducklake {
 
+// Pull the AM name for a relation's rd_tableam; returns nullptr for rels
+// without a table AM (views, etc.). Used to gate the ducklake-specific
+// deparse mapping so heap relations referenced from INSERT/CTAS queries
+// keep their default "public"."t" shape.
 static const char *
-DuckLakeTableAmName(Relation /*relation*/) {
-	// ducklake tables in pg_ducklake always live under the ducklake AM
-	// name -- matches the PGDUCKLAKE_DUCKDB_CATALOG attachment and the
-	// sql/pg_ducklake--*.sql CREATE ACCESS METHOD declaration.
-	return "ducklake";
+RelationAmName(Oid relation_oid) {
+	HeapTuple tp = SearchSysCache1(RELOID, ObjectIdGetDatum(relation_oid));
+	if (!HeapTupleIsValid(tp)) {
+		return nullptr;
+	}
+	Form_pg_class relform = (Form_pg_class)GETSTRUCT(tp);
+	Oid amoid = relform->relam;
+	ReleaseSysCache(tp);
+	if (!OidIsValid(amoid)) {
+		return nullptr;
+	}
+	// PG has no get_am_name; read amname directly from pg_am.
+	HeapTuple amtup = SearchSysCache1(AMOID, ObjectIdGetDatum(amoid));
+	if (!HeapTupleIsValid(amtup)) {
+		return nullptr;
+	}
+	Form_pg_am amform = (Form_pg_am)GETSTRUCT(amtup);
+	char *result = pstrdup(NameStr(amform->amname));
+	ReleaseSysCache(amtup);
+	return result;
+}
+
+static bool
+IsDuckLakeRelation(Oid relation_oid) {
+	const char *am = RelationAmName(relation_oid);
+	return am && strcmp(am, "ducklake") == 0;
+}
+
+static const char *
+DuckLakeTableAmName(Relation relation) {
+	// Only the ducklake AM emits the pgducklake-prefixed DuckDB name.
+	// Non-ducklake relations (heap tables referenced from ducklake DDL,
+	// e.g. default-expression lookups) fall through to the lib default.
+	if (relation && relation->rd_tableam) {
+		const char *am = RelationAmName(RelationGetRelid(relation));
+		if (am && strcmp(am, "ducklake") == 0) {
+			return "ducklake";
+		}
+	}
+	return nullptr;
+}
+
+// Render `"pgducklake"."schema"."table"` for ducklake relations; fall
+// through to the lib default for everything else (so default-expr walks
+// over heap relations during ducklake DDL still produce plain PG names).
+static char *
+DuckLakeRelationName(Oid relation_oid) {
+	if (!IsDuckLakeRelation(relation_oid)) {
+		return nullptr;
+	}
+	HeapTuple tp = SearchSysCache1(RELOID, ObjectIdGetDatum(relation_oid));
+	if (!HeapTupleIsValid(tp)) {
+		elog(ERROR, "cache lookup failed for relation %u", relation_oid);
+	}
+	Form_pg_class relform = (Form_pg_class)GETSTRUCT(tp);
+	const char *relname = NameStr(relform->relname);
+	const char *schema = get_namespace_name(relform->relnamespace);
+	ReleaseSysCache(tp);
+
+	const char *db_and_schema = pgduckdb_db_and_schema_string(schema ? schema : "public", "ducklake");
+	return psprintf("%s.%s", db_and_schema, quote_identifier(relname));
 }
 
 static void
@@ -106,14 +179,32 @@ DuckLakeValidateColumnType(Form_pg_attribute /*column*/) {
 	// the emitted CREATE TABLE.
 }
 
+// Map (PG schema, AM name) -> (DuckDB catalog, DuckDB schema). pg_ducklake
+// attaches its DuckLake metadata as catalog PGDUCKLAKE_DUCKDB_CATALOG
+// ("pgducklake") in ducklake_attach_catalog(), so every ducklake-AM table
+// lives under that catalog; the PG schema name carries over verbatim
+// (DuckDB creates schemas on demand via "CREATE SCHEMA IF NOT EXISTS").
+//
+// For non-ducklake AMs (e.g. during deparse of a ducklake view over a
+// heap relation) we fall through to nullptr so the lib default handles
+// them. NULL return is the "use default" signal documented on the
+// DeparseRoutine contract.
+static List *
+DuckLakeDbAndSchema(const char *pg_schema, const char *table_am_name) {
+	if (table_am_name && strcmp(table_am_name, "ducklake") == 0) {
+		return list_make2(pstrdup(PGDUCKLAKE_DUCKDB_CATALOG), pstrdup(pg_schema));
+	}
+	return nullptr;
+}
+
 // Exposed for the pg_ducklake table-AM registration / DDL trigger path.
 // Declared in pgducklake_table.hpp; define once here so the linker can
 // find the routine wherever it's referenced.
 const DeparseRoutine ducklake_deparse_routine = {
     /* default_database_name      */ nullptr,
-    /* relation_name              */ nullptr,
+    /* relation_name              */ DuckLakeRelationName,
     /* function_name              */ nullptr,
-    /* db_and_schema              */ nullptr,
+    /* db_and_schema              */ DuckLakeDbAndSchema,
     /* is_duckdb_row_type         */ nullptr,
     /* is_unresolved_type         */ nullptr,
     /* is_fake_type               */ nullptr,
