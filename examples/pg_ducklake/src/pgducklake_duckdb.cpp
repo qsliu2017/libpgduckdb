@@ -44,8 +44,14 @@
 #include "pgducklake/pgducklake_functions.hpp"
 #include "pgducklake/pgducklake_time_travel.hpp"
 
+#include "duckdb/main/config.hpp"
 #include "duckdb/main/database.hpp"
+#include "duckdb/storage/storage_extension.hpp"
 #include "ducklake_extension.hpp"
+
+// Included before postgres.h -- the scan layer relies on libpgduckdb's
+// C++ guards, and PG-header pollution breaks them.
+#include "pgduckdb/catalog/pgduckdb_storage.hpp"
 
 #include <filesystem>
 
@@ -123,6 +129,16 @@ void ducklake_load_extension(duckdb::DuckDB &db) {
   pgducklake::RegisterCleanupOrphanedFilesFunction(*db.instance);
   pgducklake::RegisterCompactionFunctions(*db.instance);
   pgducklake::RegisterFlushInlinedDataFunction(*db.instance);
+
+  /* Register libpgduckdb's `pgduckdb` Postgres-scan catalog type so it's
+   * available when the first query needs it. The actual ATTACH is done
+   * lazily (see pgducklake_query_plan.cpp::EnsurePostgresScanCatalog) --
+   * running ATTACH from inside the DuckDBManager::Initialize callback
+   * deadlocks during CREATE EXTENSION because PostgresCatalog's attach
+   * path scans pg_class while we're still holding the XLogCtl lock. */
+  auto &dbconfig = duckdb::DBConfig::GetConfig(*db.instance);
+  duckdb::StorageExtension::Register(dbconfig, "pgduckdb",
+                                     duckdb::make_shared_ptr<pgduckdb::PostgresStorageExtension>());
 
   ducklake_attach_catalog();
 }

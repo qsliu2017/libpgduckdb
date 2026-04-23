@@ -134,9 +134,28 @@ QueryTreeHasDuckLakeItems(Node *node, void * /*context*/) {
 duckdb::Connection *
 GetBackendConnection() {
 	static std::unique_ptr<duckdb::Connection> cached;
+	static bool pgduckdb_attached = false;
 	auto &db = EnsureDuckDBInitialized();
 	if (!cached) {
 		cached = std::make_unique<duckdb::Connection>(db);
+	}
+	if (!pgduckdb_attached) {
+		// Done lazily (not in ducklake_load_extension) because the
+		// PostgresCatalog attach path scans pg_class via SPI, which
+		// deadlocks if it runs inside DuckDBManager::Initialize during
+		// CREATE EXTENSION. By the time we get here, the outer query is
+		// past the point that held the conflicting lock.
+		auto result = cached->Query("ATTACH DATABASE 'pgduckdb' (TYPE pgduckdb)");
+		if (result->HasError()) {
+			// Already-attached is fine (e.g. after DROP+CREATE EXTENSION).
+			std::string msg = result->GetError();
+			if (msg.find("already attached") == std::string::npos &&
+			    msg.find("already exists") == std::string::npos) {
+				throw duckdb::Exception(duckdb::ExceptionType::CATALOG,
+				                        "pg_ducklake: failed to attach pgduckdb PG-scan catalog: " + msg);
+			}
+		}
+		pgduckdb_attached = true;
 	}
 	return cached.get();
 }
@@ -403,8 +422,10 @@ InitQueryPlan() {
 PlannedStmt *
 DuckLakePlanQuery(Query *parse, int /*cursor_options*/) {
 	if (parse->commandType != CMD_SELECT) {
-		// Writes still flow through the existing pgducklake_direct_insert /
-		// DDL-trigger paths; only SELECTs need the custom scan pipeline.
+		/* INSERT/UPDATE/DELETE still ride on TryCreateDirectInsertPlan /
+		 * the DDL-trigger path. Routing them through this CustomScan
+		 * recurses indefinitely because the CREATE TABLE AS deparse emits
+		 * its own INSERT that would land right back here. */
 		return nullptr;
 	}
 	if (!QueryTreeHasDuckLakeItems((Node *)parse, nullptr)) {
