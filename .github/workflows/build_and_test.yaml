@@ -193,13 +193,10 @@ jobs:
           type: Release
         - version: REL_17_STABLE
           type: Release
-        # TODO: re-enable REL_18_STABLE / {ReleaseStatic, Debug} for pg_vortex.
-        # ReleaseStatic fails with `undefined symbol: vortex_init_rust` --
-        # DuckDB's bundle-setup target does not fold vortex's Rust staticlib
-        # into libduckdb_bundle.a. Debug has its own linkage quirk with
-        # vortex's build.rs (which downloads prebuilt Release DuckDB libs).
-        # pg_duckdb has the full matrix; only the vortex-in-bundle case is
-        # excluded here.
+        - version: REL_18_STABLE
+          type: ReleaseStatic
+        - version: REL_18_STABLE
+          type: Debug
 
     runs-on: ubuntu-24.04
 
