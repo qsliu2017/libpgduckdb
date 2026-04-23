@@ -19,6 +19,7 @@
 #include "pgducklake/pgducklake_duckdb_query.hpp"
 #include "pgducklake/pgducklake_metadata_manager.hpp"
 #include "pgducklake/utility/cpp_wrapper.hpp"
+#include "pgduckdb/pgduckdb_contracts.hpp"
 
 extern "C" {
 #include "postgres.h"
@@ -77,6 +78,46 @@ DECLARE_PG_FUNCTION(ducklake_only_procedure) {
 DECLARE_PG_FUNCTION(ducklake_only_function) {
   char *function_name = DatumGetCString(DirectFunctionCall1(regprocout, ObjectIdGetDatum(fcinfo->flinfo->fn_oid)));
   elog(ERROR, "Function '%s' only works with DuckDB execution", function_name);
+}
+
+// ---------- ducklake.row pseudo-type I/O stubs --------------------------
+//
+// ducklake.row is a pseudo composite type: its shape is determined by the
+// DuckDB query the SRF was invoked with, not by PG's type system. These
+// I/O functions exist so CREATE TYPE can succeed; invoking them directly
+// is always an error, matching pg_duckdb's duckdb.row behavior.
+DECLARE_PG_FUNCTION(ducklake_row_in) {
+  elog(ERROR, "Creating the ducklake.row type is not supported");
+}
+
+DECLARE_PG_FUNCTION(ducklake_row_out) {
+  elog(ERROR, "Converting a ducklake.row to a string is not supported");
+}
+
+DECLARE_PG_FUNCTION(ducklake_row_subscript) {
+  // Returns an internal SubscriptRoutines pointer in pg_duckdb; we do not
+  // implement subscripting since ducklake.row is only ever produced by
+  // ducklake.query() output and flattened via SELECT * -- subscripting
+  // cannot reach it. Reporting nullptr is safe (Postgres never calls the
+  // subscript routines without first asking subscript_parse, which here
+  // never runs).
+  PG_RETURN_POINTER(nullptr);
+}
+
+// ---------- DuckDB lifecycle helpers exposed as SQL ---------------------
+
+DECLARE_PG_FUNCTION(ducklake_recycle_ddb) {
+  pgduckdb::DuckdbRecycleDuckDB();
+  PG_RETURN_VOID();
+}
+
+DECLARE_PG_FUNCTION(ducklake_raw_query) {
+  const char *query = text_to_cstring(PG_GETARG_TEXT_PP(0));
+  const char *err = nullptr;
+  if (pgducklake::ExecuteDuckDBQuery(query, &err) != 0) {
+    ereport(ERROR, (errcode(ERRCODE_FDW_ERROR), errmsg("DuckDB error: %s", err ? err : "unknown")));
+  }
+  PG_RETURN_BOOL(true);
 }
 
 } // extern "C"
