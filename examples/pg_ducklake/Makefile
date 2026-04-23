@@ -24,11 +24,12 @@ OBJS = $(patsubst %.cpp,%.o,$(wildcard src/*.cpp src/*/*.cpp)) \
        $(patsubst %.c,%.o,$(wildcard src/*.c src/*/*.c)) \
        $(CORE_OBJS)
 
-# Local pg_ducklake headers. The ducklake extension source tree is dropped
-# into $(DUCKDB_BUILD_DIR)/_deps/ducklake_extension_fc-src/ by DuckDB's
-# FetchContent step -- add that to the include path so our TUs can
-# #include "ducklake_extension.hpp" and "storage/ducklake_metadata_manager.hpp".
-DUCKLAKE_EXT_SRC = $(DUCKDB_BUILD_DIR)/_deps/ducklake_extension_fc-src
+# Local pg_ducklake headers and the in-tree ducklake extension source.
+# ducklake is vendored at third_party/ducklake because it carries patches
+# against upstream duckdb/ducklake (see pg_ducklake_extensions.cmake).
+# EXTENSION_CONFIGS picks it up via SOURCE_DIR; our TUs include the same
+# tree directly so headers track exactly what gets linked.
+DUCKLAKE_EXT_SRC = $(CURDIR)/third_party/ducklake
 override PG_CPPFLAGS += -I$(CURDIR)/include -I$(DUCKLAKE_EXT_SRC)/src/include
 
 include ../../Makefile

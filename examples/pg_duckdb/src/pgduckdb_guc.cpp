@@ -126,7 +126,7 @@ int duckdb_threads_for_postgres_scan = 2;
 int duckdb_max_workers_per_postgres_scan = 2;
 char *duckdb_postgres_role = strdup("");
 
-int duckdb_maximum_threads = -1;
+int duckdb_threads = -1;
 int duckdb_maximum_memory = 4096; /* 4GB in MB */
 char *duckdb_disabled_filesystems = strdup("");
 bool duckdb_enable_external_access = true;
@@ -134,7 +134,7 @@ bool duckdb_allow_community_extensions = false;
 bool duckdb_allow_unsigned_extensions = false;
 bool duckdb_autoinstall_known_extensions = true;
 bool duckdb_autoload_known_extensions = true;
-char *duckdb_temporary_directory = MakeDirName("temp");
+char *duckdb_temp_directory = MakeDirName("temp");
 char *duckdb_extension_directory = MakeDirName("extensions");
 char *duckdb_max_temp_directory_size = strdup("");
 char *duckdb_default_collation = strdup("");
@@ -204,7 +204,7 @@ InitGUC() {
 	DefineCustomDuckDBVariable(
 	    "duckdb.temporary_directory",
 	    "Set the directory to which DuckDB write temp files, alias for duckdb.temporary_directory",
-	    &duckdb_temporary_directory, PGC_SUSET);
+	    &duckdb_temp_directory, PGC_SUSET);
 
 	DefineCustomDuckDBVariable(
 	    "duckdb.max_temp_directory_size",
@@ -218,10 +218,10 @@ InitGUC() {
 	    &duckdb_extension_directory, PGC_SUSET);
 
 	DefineCustomDuckDBVariable("duckdb.threads", "Maximum number of DuckDB threads per Postgres backend.",
-	                           &duckdb_maximum_threads, -1, 1024, PGC_SUSET);
+	                           &duckdb_threads, -1, 1024, PGC_SUSET);
 	DefineCustomDuckDBVariable("duckdb.worker_threads",
 	                           "Maximum number of DuckDB threads per Postgres backend, alias for duckdb.threads",
-	                           &duckdb_maximum_threads, -1, 1024, PGC_SUSET);
+	                           &duckdb_threads, -1, 1024, PGC_SUSET);
 
 	DefineCustomDuckDBVariable("duckdb.default_collation",
 	                           "The default collation to use for DuckDB queries, e.g., 'en_us'",

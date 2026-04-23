@@ -1,20 +1,20 @@
 # DuckDB extensions baked into libduckdb for the pg_ducklake consumer.
 #
-# ducklake is statically linked so pg_ducklake can call
-# db.LoadStaticExtension<duckdb::DucklakeExtension>() without runtime
-# INSTALL/LOAD. Pinned to the same SHA DuckDB v1.4.3 itself ships with
-# (see third_party/duckdb/.github/config/extensions/ducklake.cmake).
+# ducklake is loaded from the in-tree SOURCE_DIR (examples/pg_ducklake/
+# third_party/ducklake) because the vendored copy carries local patches
+# (metadata-manager virtual interface, transaction lifecycle) that the
+# pg_ducklake sources rely on. Do NOT replace with GIT_URL/GIT_TAG against
+# upstream duckdb/ducklake -- the APIs will not match.
 #
-# json/icu/httpfs come along because pg_ducklake's regression suite and
-# default initialization path expect them to be available.
+# json/icu/httpfs are pulled from upstream; pg_ducklake's regression suite
+# and default initialization path expect them to be statically available.
 
 duckdb_extension_load(json)
 duckdb_extension_load(icu)
 duckdb_extension_load(httpfs
     GIT_URL https://github.com/duckdb/duckdb-httpfs
-    GIT_TAG 9c7d34977b10346d0b4cbbde5df807d1dab0b2bf
+    GIT_TAG 13e18b3c9f3810334f5972b76a3acc247b28e537
 )
 duckdb_extension_load(ducklake
-    GIT_URL https://github.com/duckdb/ducklake
-    GIT_TAG de813ff4d052bffe3e9e7ffcdc31d18ca38e5ecd
+    SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR}/third_party/ducklake
 )
