@@ -81,35 +81,59 @@ RegisterDuckdbTableAm(const char * /*name*/, const TableAmRoutine * /*am*/) {
 	return true;
 }
 
-// ---------- DDL deparse stubs ------------------------------------------
+// ---------- DDL deparse routine --------------------------------------
 //
-// Upstream pg_duckdb provided pgduckdb_get_tabledef /
-// pgduckdb_get_alter_tabledef / pgduckdb_get_rename_relationdef on top of
-// its deparse machinery. The libpgduckdb port currently has the lower
-// layer (pgduckdb_get_querydef) but not these three wrappers; porting them
-// requires lifting pg_duckdb's pgduckdb_deparse.cpp wholesale and is
-// deferred. pg_ducklake's DDL paths will report a clear error until then
-// -- dlopen still succeeds.
-extern "C" char *
-pgduckdb_get_tabledef(Oid /*relation_oid*/) {
-	ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-	                errmsg("pg_ducklake DDL deparse not yet implemented on libpgduckdb")));
-	return nullptr;
+// libpgduckdb's pgduckdb_get_tabledef / pgduckdb_get_alter_tabledef /
+// pgduckdb_get_rename_relationdef do all the PG-DDL -> DuckDB-DDL work;
+// we just supply the consumer-specific callbacks the generic path can't
+// know on its own (AM name, column-type validation, AM ownership check).
+
+namespace pgducklake {
+
+static const char *
+DuckLakeTableAmName(Relation /*relation*/) {
+	// ducklake tables in pg_ducklake always live under the ducklake AM
+	// name -- matches the PGDUCKLAKE_DUCKDB_CATALOG attachment and the
+	// sql/pg_ducklake--*.sql CREATE ACCESS METHOD declaration.
+	return "ducklake";
 }
 
-extern "C" char *
-pgduckdb_get_alter_tabledef(Oid /*relation_oid*/, AlterTableStmt * /*alter_stmt*/) {
-	ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-	                errmsg("pg_ducklake DDL deparse not yet implemented on libpgduckdb")));
-	return nullptr;
+static void
+DuckLakeValidateColumnType(Form_pg_attribute /*column*/) {
+	// No extra column-type validation today. The lib walker already
+	// rejects PG types without a format_type_with_typemod rendering;
+	// anything DuckDB can't store surfaces when ExecuteDuckDBQuery runs
+	// the emitted CREATE TABLE.
 }
 
-extern "C" char *
-pgduckdb_get_rename_relationdef(Oid /*relation_oid*/, RenameStmt * /*rename_stmt*/) {
-	ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-	                errmsg("pg_ducklake DDL deparse not yet implemented on libpgduckdb")));
-	return nullptr;
-}
+// Exposed for the pg_ducklake table-AM registration / DDL trigger path.
+// Declared in pgducklake_table.hpp; define once here so the linker can
+// find the routine wherever it's referenced.
+const DeparseRoutine ducklake_deparse_routine = {
+    /* default_database_name      */ nullptr,
+    /* relation_name              */ nullptr,
+    /* function_name              */ nullptr,
+    /* db_and_schema              */ nullptr,
+    /* is_duckdb_row_type         */ nullptr,
+    /* is_unresolved_type         */ nullptr,
+    /* is_fake_type               */ nullptr,
+    /* var_is_duckdb_row          */ nullptr,
+    /* func_returns_duckdb_row    */ nullptr,
+    /* duckdb_subscript_var       */ nullptr,
+    /* strip_first_subscript      */ nullptr,
+    /* write_row_refname          */ nullptr,
+    /* subscript_has_custom_alias */ nullptr,
+    /* reconstruct_star_step      */ nullptr,
+    /* replace_subquery_with_view */ nullptr,
+    /* is_not_default_expr        */ nullptr,
+    /* show_type                  */ nullptr,
+    /* add_tablesample_percent    */ nullptr,
+    /* table_am_name              */ DuckLakeTableAmName,
+    /* validate_column_type       */ DuckLakeValidateColumnType,
+    /* assert_owned_relation      */ nullptr,
+};
+
+} // namespace pgducklake
 
 // ---------- pgduckdb:: namespace implementations -----------------------
 

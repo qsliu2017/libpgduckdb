@@ -14,14 +14,14 @@ class DuckDB;
 // Upstream function - keep extern "C" linkage
 extern "C" bool RegisterDuckdbTableAm(const char *name, const TableAmRoutine *am);
 
-// DDL deparse entry points live in pg_duckdb's own pgduckdb_deparse.hpp
-// (examples/pg_duckdb/include/pgduckdb/pgduckdb_deparse.hpp in this repo).
-// We re-declare them here so pg_ducklake TUs do not need to vendor that
-// header; the symbols are resolved at backend load time against the
-// already-loaded pg_duckdb.so.
-extern "C" char *pgduckdb_get_tabledef(Oid relation_oid);
-extern "C" char *pgduckdb_get_alter_tabledef(Oid relation_oid, AlterTableStmt *alter_stmt);
-extern "C" char *pgduckdb_get_rename_relationdef(Oid relation_oid, RenameStmt *rename_stmt);
+// DDL deparse entry points live in libpgduckdb's pgduckdb_ruleutils.h.
+// Pass &pgducklake::ducklake_deparse_routine when calling them from
+// pg_ducklake TUs.
+#include "pgduckdb/pgduckdb_ruleutils.h"
+
+namespace pgducklake {
+extern const DeparseRoutine ducklake_deparse_routine;
+} // namespace pgducklake
 
 // Our C++ additions — all in namespace pgduckdb
 namespace pgduckdb {

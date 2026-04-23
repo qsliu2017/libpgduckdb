@@ -19,19 +19,35 @@
  *-------------------------------------------------------------------------
  */
 #include "duckdb.hpp"
+#include "pgduckdb/pg/locale.hpp"
+#include "pgduckdb/pg/relations.hpp"
 #include "pgduckdb/pg/string_utils.hpp"
 
 extern "C" {
 #include "postgres.h"
 
+#include "access/heapam.h"
 #include "access/htup_details.h"
+#include "access/relation.h"
+#include "catalog/heap.h"
 #include "catalog/pg_class.h"
+#include "catalog/pg_collation.h"
+#include "commands/tablecmds.h"
+#include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
 #include "nodes/parsenodes.h"
 #include "lib/stringinfo.h"
+#include "parser/parse_coerce.h"
+#include "parser/parse_collate.h"
+#include "parser/parse_expr.h"
+#include "parser/parse_node.h"
+#include "parser/parse_relation.h"
+#include "parser/parsetree.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
 #include "utils/lsyscache.h"
+#include "utils/rel.h"
+#include "utils/relcache.h"
 #include "utils/syscache.h"
 
 #include "pgduckdb/vendor/pg_ruleutils.h"
@@ -184,6 +200,11 @@ const DeparseRoutine PGDUCKDB_DEFAULT_DEPARSE_ROUTINE = {
     /* .is_not_default_expr        = */ DefaultIsNotDefaultExpr,
     /* .show_type                  = */ DefaultShowType,
     /* .add_tablesample_percent    = */ DefaultAddTablesamplePercent,
+    /* DDL-emit callbacks -- all nullptr; the helpers in this TU fall back
+     * to sensible defaults when the routine fields are NULL. */
+    /* .table_am_name              = */ nullptr,
+    /* .validate_column_type       = */ nullptr,
+    /* .assert_owned_relation      = */ nullptr,
 };
 
 /* ------------------------------------------------------------------
@@ -497,6 +518,495 @@ pg_duckdb_get_oper_expr_suffix(StringInfo buf, void *vctx) {
 			appendStringInfo(buf, ")");
 		}
 	}
+}
+
+} /* extern "C" */
+
+/* ------------------------------------------------------------------
+ * DDL emitters: pgduckdb_get_tabledef / pgduckdb_get_alter_tabledef /
+ * pgduckdb_get_rename_relationdef. Generic-ish PG-DDL -> DuckDB-DDL
+ * deparse; consumer-specific pieces (table AM name, per-column type
+ * validation, AM ownership assertion) are threaded through
+ * DeparseRoutine callbacks.
+ * ------------------------------------------------------------------ */
+
+extern "C" {
+
+namespace {
+
+const char *
+RoutineTableAmName(const DeparseRoutine *r, Relation relation) {
+	if (r && r->table_am_name) {
+		const char *name = r->table_am_name(relation);
+		if (name)
+			return name;
+	}
+	return "main";
+}
+
+void
+RoutineValidateColumnType(const DeparseRoutine *r, Form_pg_attribute attr) {
+	if (r && r->validate_column_type) {
+		r->validate_column_type(attr);
+	}
+}
+
+void
+RoutineAssertOwnedRelation(const DeparseRoutine *r, Relation relation) {
+	if (r && r->assert_owned_relation) {
+		r->assert_owned_relation(relation);
+	}
+}
+
+/*
+ * Cook a raw CHECK-constraint Node tree (vendored from PG's heap.c
+ * StoreRelCheck / cookConstraint path) down to a storable expr the
+ * ruleutils walker can deparse.
+ */
+Node *
+CookCheckConstraint(ParseState *pstate, Node *raw_constraint, const char *relname) {
+	Node *expr = transformExpr(pstate, raw_constraint, EXPR_KIND_CHECK_CONSTRAINT);
+	expr = coerce_to_boolean(pstate, expr, "CHECK");
+	assign_expr_collations(pstate, expr);
+	if (list_length(pstate->p_rtable) != 1) {
+		ereport(ERROR, (errcode(ERRCODE_INVALID_COLUMN_REFERENCE),
+		                errmsg("only table \"%s\" can be referenced in check constraint", relname)));
+	}
+	return expr;
+}
+
+struct TableDefCtx {
+	Oid relation_oid;
+	const DeparseRoutine *routine;
+	char *result;
+};
+
+char *
+RunGetTableDef(void *arg) {
+	auto *ctx = static_cast<TableDefCtx *>(arg);
+	Relation relation = relation_open(ctx->relation_oid, AccessShareLock);
+	const char *relation_name = pgduckdb_relation_name(ctx->relation_oid);
+	const char *postgres_schema_name = get_namespace_name_or_temp(relation->rd_rel->relnamespace);
+	const char *table_am_name = RoutineTableAmName(ctx->routine, relation);
+	const char *db_and_schema = pgduckdb_db_and_schema_string(postgres_schema_name, table_am_name);
+
+	StringInfoData buffer;
+	initStringInfo(&buffer);
+
+	if (relation->rd_rel->relkind == RELKIND_PARTITIONED_TABLE) {
+		ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+		                errmsg("Using DuckDB as a table access method on a partitioned table is not supported")));
+	} else if (relation->rd_rel->relkind != RELKIND_RELATION) {
+		elog(ERROR, "Only regular tables are supported in DuckDB");
+	}
+
+	if (relation->rd_rel->relispartition) {
+		ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED), errmsg("DuckDB tables cannot be used as a partition")));
+	}
+
+	appendStringInfo(&buffer, "CREATE SCHEMA IF NOT EXISTS %s; ", db_and_schema);
+
+	appendStringInfoString(&buffer, "CREATE ");
+	if (relation->rd_rel->relpersistence == RELPERSISTENCE_TEMP) {
+		/* allowed */
+	} else if (relation->rd_rel->relpersistence != RELPERSISTENCE_PERMANENT) {
+		elog(ERROR, "Only TEMP and non-UNLOGGED tables are supported in DuckDB");
+	}
+
+	appendStringInfo(&buffer, "TABLE %s (", relation_name);
+
+	if (list_length(RelationGetFKeyList(relation)) > 0) {
+		elog(ERROR, "DuckDB tables do not support foreign keys");
+	}
+
+	List *relation_context = pgduckdb_deparse_context_for(relation_name, ctx->relation_oid);
+
+	TupleDesc tuple_descriptor = RelationGetDescr(relation);
+	TupleConstr *tuple_constraints = tuple_descriptor->constr;
+	AttrDefault *default_value_list = tuple_constraints ? tuple_constraints->defval : nullptr;
+
+	bool first_column_printed = false;
+	AttrNumber default_value_index = 0;
+	for (int i = 0; i < tuple_descriptor->natts; i++) {
+		Form_pg_attribute column = TupleDescAttr(tuple_descriptor, i);
+		if (column->attisdropped)
+			continue;
+
+		const char *column_name = NameStr(column->attname);
+
+		/* Consumer-supplied validation -- e.g. bare NUMERIC rejection. */
+		RoutineValidateColumnType(ctx->routine, column);
+
+		const char *column_type_name = format_type_with_typemod(column->atttypid, column->atttypmod);
+
+		if (first_column_printed) {
+			appendStringInfoString(&buffer, ", ");
+		}
+		first_column_printed = true;
+
+		appendStringInfo(&buffer, "%s ", quote_identifier(column_name));
+		appendStringInfoString(&buffer, column_type_name);
+
+		if (column->attcompression) {
+			elog(ERROR, "Column compression is not supported in DuckDB");
+		}
+		if (column->attidentity) {
+			elog(ERROR, "Identity columns are not supported in DuckDB");
+		}
+
+		if (column->atthasdef) {
+			Assert(tuple_constraints != nullptr);
+			Assert(default_value_list != nullptr);
+
+			AttrDefault *default_value = &(default_value_list[default_value_index]);
+			default_value_index++;
+
+			Assert(default_value->adnum == (i + 1));
+			Assert(default_value_index <= tuple_constraints->num_defval);
+
+			Node *default_node = (Node *)stringToNode(default_value->adbin);
+			char *default_string = pgduckdb_deparse_expression(default_node, relation_context, false, false);
+
+			if (!column->attgenerated) {
+				appendStringInfo(&buffer, " DEFAULT %s", default_string);
+			} else if (column->attgenerated == ATTRIBUTE_GENERATED_STORED) {
+				elog(ERROR, "DuckDB does not support STORED generated columns");
+			} else {
+				elog(ERROR, "Unknown generated column type");
+			}
+		}
+
+		if (column->attnotnull) {
+			appendStringInfoString(&buffer, " NOT NULL");
+		}
+
+		Oid collation = column->attcollation;
+		if (collation != InvalidOid && collation != DEFAULT_COLLATION_OID && !pgduckdb::pg::IsCLocale(collation)) {
+			elog(ERROR, "DuckDB does not support column collations");
+		}
+	}
+
+	AttrNumber constraint_count = tuple_constraints ? tuple_constraints->num_check : 0;
+	ConstrCheck *check_constraint_list = tuple_constraints ? tuple_constraints->check : nullptr;
+
+	for (AttrNumber i = 0; i < constraint_count; i++) {
+		ConstrCheck *check_constraint = &(check_constraint_list[i]);
+		Node *check_node = (Node *)stringToNode(check_constraint->ccbin);
+		char *check_string = pgduckdb_deparse_expression(check_node, relation_context, false, false);
+
+		if (first_column_printed || i > 0) {
+			appendStringInfoString(&buffer, ", ");
+		}
+		appendStringInfo(&buffer, "CONSTRAINT %s CHECK (%s)", quote_identifier(check_constraint->ccname), check_string);
+	}
+
+	appendStringInfoString(&buffer, ")");
+
+	if (relation->rd_options) {
+		elog(ERROR, "Storage options are not supported in DuckDB");
+	}
+
+	RoutineAssertOwnedRelation(ctx->routine, relation);
+
+	relation_close(relation, AccessShareLock);
+
+	ctx->result = buffer.data;
+	return ctx->result;
+}
+
+struct AlterTableCtx {
+	Oid relation_oid;
+	AlterTableStmt *alter_stmt;
+	const DeparseRoutine *routine;
+	char *result;
+};
+
+char *
+RunGetAlterTableDef(void *arg) {
+	auto *ctx = static_cast<AlterTableCtx *>(arg);
+	Relation relation = relation_open(ctx->relation_oid, AccessShareLock);
+	const char *relation_name = pgduckdb_relation_name(ctx->relation_oid);
+
+	StringInfoData buffer;
+	initStringInfo(&buffer);
+
+	if (get_rel_relkind(ctx->relation_oid) != RELKIND_RELATION) {
+		elog(ERROR, "Only regular tables are supported in DuckDB");
+	}
+	if (list_length(RelationGetFKeyList(relation)) > 0) {
+		elog(ERROR, "DuckDB tables do not support foreign keys");
+	}
+
+	List *relation_context = pgduckdb_deparse_context_for(relation_name, ctx->relation_oid);
+	ParseState *pstate = make_parsestate(nullptr);
+	ParseNamespaceItem *nsitem = addRangeTableEntryForRelation(pstate, relation, AccessShareLock, nullptr, false, true);
+	addNSItemToQuery(pstate, nsitem, true, true, true);
+
+	foreach_node(AlterTableCmd, cmd, ctx->alter_stmt->cmds) {
+		appendStringInfo(&buffer, "ALTER TABLE %s ", relation_name);
+
+		switch (cmd->subtype) {
+		case AT_AddColumn: {
+			ColumnDef *col = castNode(ColumnDef, cmd->def);
+			TupleDesc tupdesc = BuildDescForRelation(list_make1(col));
+			Form_pg_attribute attribute = TupleDescAttr(tupdesc, 0);
+			const char *column_fq_type = format_type_with_typemod(attribute->atttypid, attribute->atttypmod);
+
+			appendStringInfo(&buffer, "ADD COLUMN %s %s", quote_identifier(col->colname), column_fq_type);
+			foreach_node(Constraint, constraint, col->constraints) {
+				switch (constraint->contype) {
+				case CONSTR_NULL:
+					appendStringInfoString(&buffer, " NULL");
+					break;
+				case CONSTR_NOTNULL:
+					appendStringInfoString(&buffer, " NOT NULL");
+					break;
+				case CONSTR_DEFAULT:
+					if (constraint->raw_expr) {
+						auto expr = cookDefault(pstate, constraint->raw_expr, attribute->atttypid, attribute->atttypmod,
+						                        col->colname, attribute->attgenerated);
+						char *default_string = pgduckdb_deparse_expression(expr, relation_context, false, false);
+						appendStringInfo(&buffer, " DEFAULT %s", default_string);
+					}
+					break;
+				case CONSTR_CHECK: {
+					appendStringInfoString(&buffer, "CHECK ");
+					auto expr = CookCheckConstraint(pstate, constraint->raw_expr, RelationGetRelationName(relation));
+					char *check_string = pgduckdb_deparse_expression(expr, relation_context, false, false);
+					appendStringInfo(&buffer, "(%s); ", check_string);
+					break;
+				}
+				case CONSTR_PRIMARY:
+					appendStringInfoString(&buffer, " PRIMARY KEY");
+					break;
+				case CONSTR_UNIQUE:
+					appendStringInfoString(&buffer, " UNIQUE");
+					break;
+				default:
+					elog(ERROR, "DuckDB does not support this ALTER TABLE constraint yet");
+				}
+			}
+
+			if (col->collClause || col->collOid != InvalidOid) {
+				elog(ERROR, "Column collations are not supported in DuckDB");
+			}
+
+			appendStringInfoString(&buffer, "; ");
+			break;
+		}
+
+		case AT_AlterColumnType: {
+			const char *column_name = cmd->name;
+			ColumnDef *col = castNode(ColumnDef, cmd->def);
+			TupleDesc tupdesc = BuildDescForRelation(list_make1(col));
+			Form_pg_attribute attribute = TupleDescAttr(tupdesc, 0);
+			const char *column_fq_type = format_type_with_typemod(attribute->atttypid, attribute->atttypmod);
+
+			appendStringInfo(&buffer, "ALTER COLUMN %s TYPE %s; ", quote_identifier(column_name), column_fq_type);
+			break;
+		}
+
+		case AT_DropColumn: {
+			appendStringInfo(&buffer, "DROP COLUMN %s", quote_identifier(cmd->name));
+			if (cmd->behavior == DROP_CASCADE) {
+				appendStringInfoString(&buffer, " CASCADE");
+			} else if (cmd->behavior == DROP_RESTRICT) {
+				appendStringInfoString(&buffer, " RESTRICT");
+			}
+			appendStringInfoString(&buffer, "; ");
+			break;
+		}
+
+		case AT_ColumnDefault: {
+			const char *column_name = cmd->name;
+			TupleDesc tupdesc = RelationGetDescr(relation);
+			Form_pg_attribute attribute = pgduckdb::pg::GetAttributeByName(tupdesc, column_name);
+			if (!attribute) {
+				elog(ERROR, "Column %s not found in table %s", column_name, relation_name);
+			}
+
+			appendStringInfo(&buffer, "ALTER COLUMN %s ", quote_identifier(cmd->name));
+
+			if (cmd->def) {
+				auto expr = cookDefault(pstate, cmd->def, attribute->atttypid, attribute->atttypmod, column_name,
+				                        attribute->attgenerated);
+				char *default_string = pgduckdb_deparse_expression(expr, relation_context, false, false);
+				appendStringInfo(&buffer, "SET DEFAULT %s; ", default_string);
+			} else {
+				appendStringInfoString(&buffer, "DROP DEFAULT; ");
+			}
+			break;
+		}
+
+		case AT_DropNotNull:
+			appendStringInfo(&buffer, "ALTER COLUMN %s DROP NOT NULL; ", quote_identifier(cmd->name));
+			break;
+
+		case AT_SetNotNull:
+			appendStringInfo(&buffer, "ALTER COLUMN %s SET NOT NULL; ", quote_identifier(cmd->name));
+			break;
+
+		case AT_AddConstraint: {
+			Constraint *constraint = castNode(Constraint, cmd->def);
+			appendStringInfoString(&buffer, "ADD ");
+
+			switch (constraint->contype) {
+			case CONSTR_CHECK: {
+				appendStringInfo(&buffer, "CONSTRAINT %s CHECK ",
+				                 quote_identifier(constraint->conname ? constraint->conname : ""));
+				auto expr = CookCheckConstraint(pstate, constraint->raw_expr, RelationGetRelationName(relation));
+				char *check_string = pgduckdb_deparse_expression(expr, relation_context, false, false);
+				appendStringInfo(&buffer, "(%s); ", check_string);
+				break;
+			}
+			case CONSTR_PRIMARY: {
+				appendStringInfoString(&buffer, "PRIMARY KEY (");
+				ListCell *cell;
+				bool first = true;
+				foreach (cell, constraint->keys) {
+					char *key = strVal(lfirst(cell));
+					if (!first)
+						appendStringInfoString(&buffer, ", ");
+					appendStringInfoString(&buffer, quote_identifier(key));
+					first = false;
+				}
+				appendStringInfoString(&buffer, "); ");
+				break;
+			}
+			case CONSTR_UNIQUE: {
+				appendStringInfoString(&buffer, "UNIQUE (");
+				ListCell *ucell;
+				bool ufirst = true;
+				foreach (ucell, constraint->keys) {
+					char *key = strVal(lfirst(ucell));
+					if (!ufirst)
+						appendStringInfoString(&buffer, ", ");
+					appendStringInfoString(&buffer, quote_identifier(key));
+					ufirst = false;
+				}
+				appendStringInfoString(&buffer, "); ");
+				break;
+			}
+			default:
+				elog(ERROR, "DuckDB does not support this constraint type");
+			}
+			break;
+		}
+
+		case AT_DropConstraint: {
+			appendStringInfo(&buffer, "DROP CONSTRAINT %s", quote_identifier(cmd->name));
+			if (cmd->behavior == DROP_CASCADE) {
+				appendStringInfoString(&buffer, " CASCADE");
+			} else if (cmd->behavior == DROP_RESTRICT) {
+				appendStringInfoString(&buffer, " RESTRICT");
+			}
+			appendStringInfoString(&buffer, "; ");
+			break;
+		}
+
+		case AT_SetRelOptions:
+		case AT_ResetRelOptions: {
+			List *options = (List *)cmd->def;
+			bool is_set = (cmd->subtype == AT_SetRelOptions);
+			appendStringInfoString(&buffer, is_set ? "SET (" : "RESET (");
+
+			ListCell *cell;
+			bool first = true;
+			foreach (cell, options) {
+				DefElem *def = (DefElem *)lfirst(cell);
+				if (!first)
+					appendStringInfoString(&buffer, ", ");
+				appendStringInfoString(&buffer, quote_identifier(def->defname));
+				if (is_set && def->arg) {
+					char *val = nullptr;
+					if (IsA(def->arg, String)) {
+						val = strVal(def->arg);
+						appendStringInfo(&buffer, " = %s", quote_literal_cstr(val));
+					} else if (IsA(def->arg, Integer)) {
+						val = psprintf("%d", intVal(def->arg));
+						appendStringInfo(&buffer, " = %s", val);
+					} else {
+						elog(ERROR, "Unsupported option value type");
+					}
+				}
+				first = false;
+			}
+			appendStringInfoString(&buffer, "); ");
+			break;
+		}
+
+		default:
+			ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+			                errmsg("DuckDB does not support this ALTER TABLE command")));
+		}
+	}
+	relation_close(relation, AccessShareLock);
+
+	ctx->result = buffer.data;
+	return ctx->result;
+}
+
+struct RenameRelationCtx {
+	Oid relation_oid;
+	RenameStmt *rename_stmt;
+	const DeparseRoutine *routine;
+	char *result;
+};
+
+char *
+RunGetRenameRelationDef(void *arg) {
+	auto *ctx = static_cast<RenameRelationCtx *>(arg);
+	if (ctx->rename_stmt->renameType != OBJECT_TABLE && ctx->rename_stmt->renameType != OBJECT_VIEW &&
+	    ctx->rename_stmt->renameType != OBJECT_COLUMN) {
+		elog(ERROR, "Only renaming tables, views, and columns is supported");
+	}
+
+	Relation relation = relation_open(ctx->relation_oid, AccessShareLock);
+	RoutineAssertOwnedRelation(ctx->routine, relation);
+
+	const char *postgres_schema_name = get_namespace_name_or_temp(relation->rd_rel->relnamespace);
+	const char *table_am_name = RoutineTableAmName(ctx->routine, relation);
+	const char *db_and_schema = pgduckdb_db_and_schema_string(postgres_schema_name, table_am_name);
+	const char *old_table_name =
+	    psprintf("%s.%s", db_and_schema, quote_identifier(ctx->rename_stmt->relation->relname));
+
+	const char *relation_type = (relation->rd_rel->relkind == RELKIND_VIEW) ? "VIEW" : "TABLE";
+
+	StringInfoData buffer;
+	initStringInfo(&buffer);
+
+	if (ctx->rename_stmt->subname) {
+		appendStringInfo(&buffer, "ALTER %s %s RENAME COLUMN %s TO %s;", relation_type, old_table_name,
+		                 quote_identifier(ctx->rename_stmt->subname), quote_identifier(ctx->rename_stmt->newname));
+	} else {
+		appendStringInfo(&buffer, "ALTER %s %s RENAME TO %s;", relation_type, old_table_name,
+		                 quote_identifier(ctx->rename_stmt->newname));
+	}
+
+	relation_close(relation, AccessShareLock);
+
+	ctx->result = buffer.data;
+	return ctx->result;
+}
+
+} // anonymous namespace
+
+char *
+pgduckdb_get_tabledef(Oid relation_oid, const DeparseRoutine *routine) {
+	TableDefCtx ctx{relation_oid, routine, nullptr};
+	return pgduckdb_deparse_with_routine(routine, RunGetTableDef, &ctx);
+}
+
+char *
+pgduckdb_get_alter_tabledef(Oid relation_oid, AlterTableStmt *alter_stmt, const DeparseRoutine *routine) {
+	AlterTableCtx ctx{relation_oid, alter_stmt, routine, nullptr};
+	return pgduckdb_deparse_with_routine(routine, RunGetAlterTableDef, &ctx);
+}
+
+char *
+pgduckdb_get_rename_relationdef(Oid relation_oid, RenameStmt *rename_stmt, const DeparseRoutine *routine) {
+	RenameRelationCtx ctx{relation_oid, rename_stmt, routine, nullptr};
+	return pgduckdb_deparse_with_routine(routine, RunGetRenameRelationDef, &ctx);
 }
 
 } /* extern "C" */

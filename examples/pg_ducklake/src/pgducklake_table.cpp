@@ -597,7 +597,7 @@ DECLARE_PG_FUNCTION(ducklake_create_table_trigger) {
   pgducklake::SyncDefaultTablePathToDuckDB();
 
   // Generate CREATE TABLE DDL for DuckDB
-  std::string create_table_ddl(pgduckdb_get_tabledef(relid));
+  std::string create_table_ddl(pgduckdb_get_tabledef(relid, &pgducklake::ducklake_deparse_routine));
   elog(DEBUG1, "Creating DuckLake table: %s", create_table_ddl.c_str());
 
   // Execute CREATE TABLE in DuckDB via raw_query
@@ -835,9 +835,10 @@ DECLARE_PG_FUNCTION(ducklake_alter_table_trigger) {
   /* Generate DDL using pg_duckdb's ruleutils functions */
   char *ddl_str;
   if (IsA(parsetree, RenameStmt)) {
-    ddl_str = pgduckdb_get_rename_relationdef(relid, (RenameStmt *)parsetree);
+    ddl_str = pgduckdb_get_rename_relationdef(relid, (RenameStmt *)parsetree, &pgducklake::ducklake_deparse_routine);
   } else if (IsA(parsetree, AlterTableStmt)) {
-    ddl_str = pgduckdb_get_alter_tabledef(relid, (AlterTableStmt *)parsetree);
+    ddl_str =
+        pgduckdb_get_alter_tabledef(relid, (AlterTableStmt *)parsetree, &pgducklake::ducklake_deparse_routine);
   } else {
     elog(ERROR, "Unexpected parsetree type in ALTER TABLE trigger: %d", nodeTag(parsetree));
   }

@@ -790,7 +790,7 @@ DECLARE_PG_FUNCTION(duckdb_create_table_trigger) {
 	 * table is supported. So, we do call that function first, before creating
 	 * the DuckDB connection and possibly transactions.
 	 */
-	std::string create_table_string(pgduckdb_get_tabledef(relid));
+	std::string create_table_string(pgduckdb_get_tabledef(relid, &pgduckdb::pg_duckdb_deparse_routine));
 
 	/* We're going to run multiple queries in DuckDB, so we need to start a
 	 * transaction to ensure ACID guarantees hold. */
@@ -1185,10 +1185,12 @@ DECLARE_PG_FUNCTION(duckdb_alter_table_trigger) {
 	char *alter_table_stmt_string;
 	if (IsA(trigdata->parsetree, AlterTableStmt)) {
 		AlterTableStmt *alter_table_stmt = (AlterTableStmt *)trigdata->parsetree;
-		alter_table_stmt_string = pgduckdb_get_alter_tabledef(relid, alter_table_stmt);
+		alter_table_stmt_string =
+		    pgduckdb_get_alter_tabledef(relid, alter_table_stmt, &pgduckdb::pg_duckdb_deparse_routine);
 	} else if (IsA(trigdata->parsetree, RenameStmt)) {
 		RenameStmt *rename_stmt = (RenameStmt *)trigdata->parsetree;
-		alter_table_stmt_string = pgduckdb_get_rename_relationdef(relid, rename_stmt);
+		alter_table_stmt_string =
+		    pgduckdb_get_rename_relationdef(relid, rename_stmt, &pgduckdb::pg_duckdb_deparse_routine);
 	} else {
 		elog(ERROR, "Unexpected parsetree type: %d", nodeTag(trigdata->parsetree));
 	}

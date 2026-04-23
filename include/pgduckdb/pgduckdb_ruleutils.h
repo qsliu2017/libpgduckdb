@@ -20,10 +20,13 @@
 #pragma once
 
 #include "postgres.h"
+#include "access/attnum.h"
+#include "catalog/pg_attribute.h"
 #include "nodes/parsenodes.h"
 #include "nodes/plannodes.h"
 #include "nodes/primnodes.h"
 #include "lib/stringinfo.h"
+#include "utils/relcache.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -95,6 +98,36 @@ typedef struct DeparseRoutine {
 	bool (*is_not_default_expr)(Node *, void *ctx);			   /* NULL -> always true */
 	int (*show_type)(Const *, int original_showtype);		   /* NULL -> return original */
 	void (*add_tablesample_percent)(const char *tsm_name, StringInfo, int num_args); /* NULL -> PG default */
+
+	/*
+	 * DDL emitters (pgduckdb_get_tabledef / pgduckdb_get_alter_tabledef /
+	 * pgduckdb_get_rename_relationdef) extension points. All optional; NULL
+	 * falls back to the documented default.
+	 */
+
+	/*
+	 * Consumer-side name for the Relation's table AM, as fed to the
+	 * db_and_schema callback. Used for the CREATE SCHEMA prefix and the
+	 * RENAME path. NULL -> "main" (matches the lib db_and_schema default
+	 * for the "public" schema).
+	 */
+	const char *(*table_am_name)(Relation);
+
+	/*
+	 * Per-column type gate. Called during CREATE TABLE deparse with each
+	 * non-dropped column's pg_attribute. Implementations should ereport
+	 * on unsupported types (e.g. bare NUMERIC, domains pg_duckdb's type
+	 * resolver rejects) and return normally otherwise. NULL -> no-op.
+	 */
+	void (*validate_column_type)(Form_pg_attribute);
+
+	/*
+	 * Assert/ereport that `relation` belongs to this consumer's AM. The
+	 * lib calls this once near the end of CREATE TABLE deparse so AM-
+	 * mismatched relations are rejected explicitly rather than silently
+	 * emitted. NULL -> no-op.
+	 */
+	void (*assert_owned_relation)(Relation);
 } DeparseRoutine;
 
 extern const DeparseRoutine PGDUCKDB_DEFAULT_DEPARSE_ROUTINE;
@@ -105,6 +138,17 @@ extern const DeparseRoutine PGDUCKDB_DEFAULT_DEPARSE_ROUTINE;
  * defaults).
  */
 extern char *pgduckdb_get_querydef(Query *query, const DeparseRoutine *routine);
+
+/*
+ * DDL emitters. Each takes a DeparseRoutine * to thread consumer-specific
+ * callbacks (table_am_name, validate_column_type, etc.) through the inner
+ * expression-deparse walker. `routine` may be NULL.
+ */
+extern char *pgduckdb_get_tabledef(Oid relation_oid, const DeparseRoutine *routine);
+extern char *pgduckdb_get_alter_tabledef(Oid relation_oid, AlterTableStmt *alter_stmt,
+                                         const DeparseRoutine *routine);
+extern char *pgduckdb_get_rename_relationdef(Oid relation_oid, RenameStmt *rename_stmt,
+                                             const DeparseRoutine *routine);
 
 /*
  * General deparse state for the vendored ruleutils walker: true at the
