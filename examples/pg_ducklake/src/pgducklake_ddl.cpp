@@ -1,10 +1,17 @@
 /*
  * pgducklake_ddl.cpp -- Extension-scope DDL bootstrap entry points.
  *
- * @scope extension: ducklake_initialize, ducklake_only_procedure
+ * @scope extension: ducklake_initialize, ducklake_only_procedure,
+ *                   ducklake_only_function
  *
  * ducklake_initialize() bootstraps the DuckDB catalog during CREATE EXTENSION.
- * ducklake_only_procedure() is an error stub for DuckDB-only SQL procedures.
+ * ducklake_only_procedure / ducklake_only_function are error stubs used as
+ * the C body for SQL objects that are meant to run inside DuckDB only.
+ * pg_ducklake's own planner path rewrites these calls before execution;
+ * reaching the stub means the call slipped through (e.g. the planner hook
+ * was disabled, or the function was invoked from a context the rewrite
+ * doesn't cover), so we surface a clear error rather than a confusing
+ * wrong-answer.
  */
 
 #include "pgducklake/pgducklake_defs.hpp"
@@ -61,6 +68,15 @@ DECLARE_PG_FUNCTION(ducklake_initialize) {
 DECLARE_PG_FUNCTION(ducklake_only_procedure) {
   char *proc_name = DatumGetCString(DirectFunctionCall1(regprocout, ObjectIdGetDatum(fcinfo->flinfo->fn_oid)));
   elog(ERROR, "Procedure '%s' only works with DuckDB execution", proc_name);
+}
+
+// pg_ducklake-local mirror of pg_duckdb's duckdb_only_function. Every SQL
+// function in sql/pg_ducklake--*.sql that used to reference
+// $libdir/pg_duckdb's duckdb_only_function now binds to this symbol
+// instead, so pg_ducklake can be loaded without pg_duckdb.so present.
+DECLARE_PG_FUNCTION(ducklake_only_function) {
+  char *function_name = DatumGetCString(DirectFunctionCall1(regprocout, ObjectIdGetDatum(fcinfo->flinfo->fn_oid)));
+  elog(ERROR, "Function '%s' only works with DuckDB execution", function_name);
 }
 
 } // extern "C"

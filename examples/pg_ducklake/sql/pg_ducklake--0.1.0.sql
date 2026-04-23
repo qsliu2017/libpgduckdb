@@ -191,7 +191,7 @@ CREATE FUNCTION ducklake.options(
     OUT scope_entry text
 )
 RETURNS SETOF record
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- Flush -------------------------------------------------------------
@@ -200,14 +200,14 @@ LANGUAGE C;
 CREATE FUNCTION ducklake.flush_inlined_data()
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- passthrough
 CREATE FUNCTION ducklake.flush_inlined_data(schema_name text, table_name text)
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- rewrite -> flush_inlined_data(text, text)
@@ -221,7 +221,7 @@ LANGUAGE C;
 CREATE FUNCTION ducklake.ensure_inlined_data_table(schema_name text, table_name text)
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- rewrite -> ensure_inlined_data_table(text, text)
@@ -315,21 +315,21 @@ $$;
 CREATE FUNCTION ducklake.snapshots()
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- passthrough
 CREATE FUNCTION ducklake.current_snapshot()
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- passthrough
 CREATE FUNCTION ducklake.last_committed_snapshot()
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- duckdb-only proc
@@ -346,14 +346,14 @@ LANGUAGE C;
 CREATE FUNCTION ducklake.table_info()
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- passthrough
 CREATE FUNCTION ducklake.list_files(schema_name text, table_name text)
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- rewrite -> list_files(text, text)
@@ -369,28 +369,28 @@ LANGUAGE C;
 CREATE FUNCTION ducklake.time_travel(table_name text, version bigint)
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- passthrough
 CREATE FUNCTION ducklake.time_travel(table_name text, "timestamp" timestamptz)
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- passthrough (schema + table)
 CREATE FUNCTION ducklake.time_travel(schema_name text, table_name text, version bigint)
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- passthrough (schema + table)
 CREATE FUNCTION ducklake.time_travel(schema_name text, table_name text, "timestamp" timestamptz)
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- rewrite -> time_travel(text, text, bigint)
@@ -416,7 +416,7 @@ CREATE FUNCTION ducklake.table_insertions(
 )
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- passthrough
@@ -426,7 +426,7 @@ CREATE FUNCTION ducklake.table_insertions(
 )
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- rewrite -> table_insertions(text, text, bigint, bigint)
@@ -452,7 +452,7 @@ CREATE FUNCTION ducklake.table_deletions(
 )
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- passthrough
@@ -462,7 +462,7 @@ CREATE FUNCTION ducklake.table_deletions(
 )
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- rewrite -> table_deletions(text, text, bigint, bigint)
@@ -488,7 +488,7 @@ CREATE FUNCTION ducklake.table_changes(
 )
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- passthrough
@@ -498,7 +498,7 @@ CREATE FUNCTION ducklake.table_changes(
 )
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- rewrite -> table_changes(text, text, bigint, bigint)
@@ -523,21 +523,21 @@ LANGUAGE C;
 CREATE FUNCTION ducklake.cleanup_old_files()
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- passthrough
 CREATE FUNCTION ducklake.cleanup_old_files(older_than interval)
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- passthrough
 CREATE FUNCTION ducklake.cleanup_orphaned_files()
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- Maintenance -------------------------------------------------------
@@ -546,14 +546,14 @@ LANGUAGE C;
 CREATE FUNCTION ducklake.merge_adjacent_files()
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- passthrough
 CREATE FUNCTION ducklake.merge_adjacent_files(schema_name text, table_name text)
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- rewrite -> merge_adjacent_files(text, text)
@@ -567,14 +567,14 @@ LANGUAGE C;
 CREATE FUNCTION ducklake.rewrite_data_files()
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- passthrough
 CREATE FUNCTION ducklake.rewrite_data_files(schema_name text, table_name text)
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- rewrite -> rewrite_data_files(text, text)
@@ -588,7 +588,7 @@ LANGUAGE C;
 CREATE FUNCTION ducklake.expire_snapshots()
 RETURNS SETOF duckdb.row
 SET search_path = pg_catalog, pg_temp
-AS '$libdir/pg_duckdb', 'duckdb_only_function'
+AS 'MODULE_PATHNAME', 'ducklake_only_function'
 LANGUAGE C;
 
 -- Freeze ------------------------------------------------------------
@@ -627,16 +627,16 @@ CREATE TYPE ducklake.variant (
 -- ->> returns text (extracts as string).
 CREATE FUNCTION ducklake.pg_variant_extract_json(ducklake.variant, text)
     RETURNS ducklake.variant
-    AS '$libdir/pg_duckdb', 'duckdb_only_function' LANGUAGE C IMMUTABLE STRICT;
+    AS 'MODULE_PATHNAME', 'ducklake_only_function' LANGUAGE C IMMUTABLE STRICT;
 CREATE FUNCTION ducklake.pg_variant_extract_json_idx(ducklake.variant, int4)
     RETURNS ducklake.variant
-    AS '$libdir/pg_duckdb', 'duckdb_only_function' LANGUAGE C IMMUTABLE STRICT;
+    AS 'MODULE_PATHNAME', 'ducklake_only_function' LANGUAGE C IMMUTABLE STRICT;
 CREATE FUNCTION ducklake.pg_variant_extract(ducklake.variant, text)
     RETURNS text
-    AS '$libdir/pg_duckdb', 'duckdb_only_function' LANGUAGE C IMMUTABLE STRICT;
+    AS 'MODULE_PATHNAME', 'ducklake_only_function' LANGUAGE C IMMUTABLE STRICT;
 CREATE FUNCTION ducklake.pg_variant_extract_idx(ducklake.variant, int4)
     RETURNS text
-    AS '$libdir/pg_duckdb', 'duckdb_only_function' LANGUAGE C IMMUTABLE STRICT;
+    AS 'MODULE_PATHNAME', 'ducklake_only_function' LANGUAGE C IMMUTABLE STRICT;
 
 -- Operators -> and ->> for variant field extraction (PG JSON-like syntax).
 -- Placed in pg_catalog so they are always in search_path.
@@ -664,19 +664,19 @@ CREATE OPERATOR pg_catalog.->> (
 -- columns that are not part of the regular column list.
 CREATE FUNCTION ducklake.rowid()
     RETURNS bigint
-    AS '$libdir/pg_duckdb', 'duckdb_only_function' LANGUAGE C IMMUTABLE STRICT;
+    AS 'MODULE_PATHNAME', 'ducklake_only_function' LANGUAGE C IMMUTABLE STRICT;
 CREATE FUNCTION ducklake.snapshot_id()
     RETURNS bigint
-    AS '$libdir/pg_duckdb', 'duckdb_only_function' LANGUAGE C IMMUTABLE STRICT;
+    AS 'MODULE_PATHNAME', 'ducklake_only_function' LANGUAGE C IMMUTABLE STRICT;
 CREATE FUNCTION ducklake.filename()
     RETURNS text
-    AS '$libdir/pg_duckdb', 'duckdb_only_function' LANGUAGE C IMMUTABLE STRICT;
+    AS 'MODULE_PATHNAME', 'ducklake_only_function' LANGUAGE C IMMUTABLE STRICT;
 CREATE FUNCTION ducklake.file_row_number()
     RETURNS bigint
-    AS '$libdir/pg_duckdb', 'duckdb_only_function' LANGUAGE C IMMUTABLE STRICT;
+    AS 'MODULE_PATHNAME', 'ducklake_only_function' LANGUAGE C IMMUTABLE STRICT;
 CREATE FUNCTION ducklake.file_index()
     RETURNS bigint
-    AS '$libdir/pg_duckdb', 'duckdb_only_function' LANGUAGE C IMMUTABLE STRICT;
+    AS 'MODULE_PATHNAME', 'ducklake_only_function' LANGUAGE C IMMUTABLE STRICT;
 
 -- ============================================================
 -- Bootstrap
