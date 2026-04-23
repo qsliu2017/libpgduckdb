@@ -53,6 +53,8 @@ void _PG_init(void) {
   pgducklake::RegisterMaintenanceLauncher();
   // Register custom scan node methods
   pgducklake::RegisterDirectInsertNode();
+  // DuckLakeScan CustomScan methods for SELECTs against ducklake tables.
+  pgducklake::InitQueryPlan();
   // Install pg_ducklake planner/utility hooks.
   pgducklake::InitHooks();
   // Register FDW callbacks and hooks.

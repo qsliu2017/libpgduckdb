@@ -354,6 +354,13 @@ PlannedStmt *DucklakePlannerHook(Query *parse, const char *query_string, int cur
     pgducklake::RegisterForeignTablesInQuery(parse);
   }
 
+  /* Route SELECTs against ducklake tables through our DuckDB instance.
+   * Returns nullptr for queries that don't reference any ducklake rel;
+   * in that case we fall through to the previous planner. */
+  if (PlannedStmt *ducklake_plan = pgducklake::DuckLakePlanQuery(parse, cursor_options)) {
+    return ducklake_plan;
+  }
+
   return prev_planner_hook(parse, query_string, cursor_options, bound_params);
 }
 
