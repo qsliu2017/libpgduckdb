@@ -595,7 +595,8 @@ RunGetTableDef(void *arg) {
 
 	if (relation->rd_rel->relkind == RELKIND_PARTITIONED_TABLE) {
 		ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-		                errmsg("Using DuckDB as a table access method on a partitioned table is not supported")));
+		                errmsg("Using %s as a table access method on a partitioned table is not supported",
+		                       table_am_name)));
 	} else if (relation->rd_rel->relkind != RELKIND_RELATION) {
 		elog(ERROR, "Only regular tables are supported in DuckDB");
 	}
