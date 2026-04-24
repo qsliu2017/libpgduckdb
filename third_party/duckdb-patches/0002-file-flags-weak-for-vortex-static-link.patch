@@ -1,0 +1,80 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: pg_duckdb downstream
+Date: Thu, 24 Apr 2026 00:00:00 +0000
+Subject: [PATCH] common: mark FileFlags out-of-line constexpr defs weak
+
+The vortex-duckdb crate (bundled with the v0.57-class vortex extension
+pinned in examples/pg_vortex) compiles its cpp/file_system.cpp with
+-std=c++20, where DuckDB's `static constexpr FileOpenFlags
+FileFlags::FILE_FLAGS_*` in-class declarations are implicitly inline
+(CWG 2426) and thus emitted as COMDAT in file_system.o. DuckDB itself
+compiles with -std=c++11 (CMAKE_CXX_STANDARD=11 is hard-coded in the
+root CMakeLists), where those same declarations are NOT implicitly
+inline, so the out-of-line defs in src/common/file_system.cpp emit
+them as plain `.rodata` symbols in ub_duckdb_common.cpp.o. Linking
+extension/vortex/vortex.duckdb_extension then fails on every Debug
+build with:
+
+    multiple definition of `duckdb::FileFlags::FILE_FLAGS_READ';
+    src/libduckdb_static.a(ub_duckdb_common.cpp.o): first defined here
+
+Tagging the 14 out-of-line defs `__attribute__((weak))` lets the
+linker merge them with vortex's COMDAT emission; the storage still
+exists (so C++11 odr-use elsewhere in DuckDB core -- e.g.
+parquet_reader.cpp -- keeps resolving), but the strong-symbol
+collision is gone.
+
+Release / ReleaseStatic were not affected previously because at -O2
+the constants get inlined into use sites and no physical symbol is
+emitted from the FileFlags TU to collide. But an earlier try that
+removed the defs entirely broke Release: odr-used references from
+parquet_reader.cpp still need the symbol at link time even at -O2.
+Weak-annotating is the targeted fix.
+---
+diff --git a/src/common/file_system.cpp b/src/common/file_system.cpp
+index 8b83c25c60..2bc7c5bcb8 100644
+--- a/src/common/file_system.cpp
++++ b/src/common/file_system.cpp
+@@ -48,20 +48,28 @@ extern "C" WINBASEAPI BOOL WINAPI GetPhysicallyInstalledSystemMemory(PULONGLONG)
+ 
+ namespace duckdb {
+ 
+-constexpr FileOpenFlags FileFlags::FILE_FLAGS_READ;
+-constexpr FileOpenFlags FileFlags::FILE_FLAGS_WRITE;
+-constexpr FileOpenFlags FileFlags::FILE_FLAGS_DIRECT_IO;
+-constexpr FileOpenFlags FileFlags::FILE_FLAGS_FILE_CREATE;
+-constexpr FileOpenFlags FileFlags::FILE_FLAGS_FILE_CREATE_NEW;
+-constexpr FileOpenFlags FileFlags::FILE_FLAGS_APPEND;
+-constexpr FileOpenFlags FileFlags::FILE_FLAGS_PRIVATE;
+-constexpr FileOpenFlags FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS;
+-constexpr FileOpenFlags FileFlags::FILE_FLAGS_PARALLEL_ACCESS;
+-constexpr FileOpenFlags FileFlags::FILE_FLAGS_EXCLUSIVE_CREATE;
+-constexpr FileOpenFlags FileFlags::FILE_FLAGS_NULL_IF_EXISTS;
+-constexpr FileOpenFlags FileFlags::FILE_FLAGS_MULTI_CLIENT_ACCESS;
+-constexpr FileOpenFlags FileFlags::FILE_FLAGS_DISABLE_LOGGING;
+-constexpr FileOpenFlags FileFlags::FILE_FLAGS_ENABLE_EXTENSION_INSTALL;
++// Mark these out-of-line defs weak so they merge with the COMDAT copies
++// emitted by downstream extensions compiled in C++17+ mode (vortex, etc.),
++// where the in-class static constexpr members become implicitly inline.
++// DuckDB itself compiles in C++11 where the out-of-line defs are required
++// for odr-use, so we keep the storage; weak linkage just avoids the
++// strong/strong collision at extension link time.
++#define PGDUCKDB_WEAK_FILEFLAG __attribute__((weak))
++PGDUCKDB_WEAK_FILEFLAG constexpr FileOpenFlags FileFlags::FILE_FLAGS_READ;
++PGDUCKDB_WEAK_FILEFLAG constexpr FileOpenFlags FileFlags::FILE_FLAGS_WRITE;
++PGDUCKDB_WEAK_FILEFLAG constexpr FileOpenFlags FileFlags::FILE_FLAGS_DIRECT_IO;
++PGDUCKDB_WEAK_FILEFLAG constexpr FileOpenFlags FileFlags::FILE_FLAGS_FILE_CREATE;
++PGDUCKDB_WEAK_FILEFLAG constexpr FileOpenFlags FileFlags::FILE_FLAGS_FILE_CREATE_NEW;
++PGDUCKDB_WEAK_FILEFLAG constexpr FileOpenFlags FileFlags::FILE_FLAGS_APPEND;
++PGDUCKDB_WEAK_FILEFLAG constexpr FileOpenFlags FileFlags::FILE_FLAGS_PRIVATE;
++PGDUCKDB_WEAK_FILEFLAG constexpr FileOpenFlags FileFlags::FILE_FLAGS_NULL_IF_NOT_EXISTS;
++PGDUCKDB_WEAK_FILEFLAG constexpr FileOpenFlags FileFlags::FILE_FLAGS_PARALLEL_ACCESS;
++PGDUCKDB_WEAK_FILEFLAG constexpr FileOpenFlags FileFlags::FILE_FLAGS_EXCLUSIVE_CREATE;
++PGDUCKDB_WEAK_FILEFLAG constexpr FileOpenFlags FileFlags::FILE_FLAGS_NULL_IF_EXISTS;
++PGDUCKDB_WEAK_FILEFLAG constexpr FileOpenFlags FileFlags::FILE_FLAGS_MULTI_CLIENT_ACCESS;
++PGDUCKDB_WEAK_FILEFLAG constexpr FileOpenFlags FileFlags::FILE_FLAGS_DISABLE_LOGGING;
++PGDUCKDB_WEAK_FILEFLAG constexpr FileOpenFlags FileFlags::FILE_FLAGS_ENABLE_EXTENSION_INSTALL;
++#undef PGDUCKDB_WEAK_FILEFLAG
+ 
+ void FileOpenFlags::Verify() {
+ #ifdef DEBUG
