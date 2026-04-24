@@ -32,6 +32,7 @@ extern "C" {
 #include "catalog/heap.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_collation.h"
+#include "commands/defrem.h"
 #include "commands/tablecmds.h"
 #include "nodes/makefuncs.h"
 #include "nodes/nodeFuncs.h"
@@ -596,7 +597,7 @@ RunGetTableDef(void *arg) {
 	if (relation->rd_rel->relkind == RELKIND_PARTITIONED_TABLE) {
 		ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
 		                errmsg("Using %s as a table access method on a partitioned table is not supported",
-		                       table_am_name)));
+		                       get_am_name(relation->rd_rel->relam))));
 	} else if (relation->rd_rel->relkind != RELKIND_RELATION) {
 		elog(ERROR, "Only regular tables are supported in DuckDB");
 	}
