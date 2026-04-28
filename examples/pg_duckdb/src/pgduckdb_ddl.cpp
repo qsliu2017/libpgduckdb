@@ -794,7 +794,7 @@ DECLARE_PG_FUNCTION(duckdb_create_table_trigger) {
 
 	/* We're going to run multiple queries in DuckDB, so we need to start a
 	 * transaction to ensure ACID guarantees hold. */
-	auto connection = pgduckdb::DuckDBManager::GetConnection(true);
+	auto connection = pgduckdb::PgDuckDBManager::GetConnection(true);
 	Query *ctas_query = nullptr;
 
 	if (IsA(parsetree, CreateTableAsStmt) && !ctas_skip_data) {
@@ -1028,7 +1028,7 @@ DECLARE_PG_FUNCTION(duckdb_drop_trigger) {
 		if (!connection) {
 			/* We're going to run multiple queries in DuckDB, so we need to
 			 * start a transaction to ensure ACID guarantees hold. */
-			connection = pgduckdb::DuckDBManager::GetConnection(true);
+			connection = pgduckdb::PgDuckDBManager::GetConnection(true);
 		}
 		char *table_name = SPI_getvalue(tuple, SPI_tuptable->tupdesc, 2);
 		pgduckdb::DuckDBQueryOrThrow(*connection,
@@ -1179,7 +1179,7 @@ DECLARE_PG_FUNCTION(duckdb_alter_table_trigger) {
 
 	/* We're going to run multiple queries in DuckDB, so we need to start a
 	 * transaction to ensure ACID guarantees hold. */
-	auto connection = pgduckdb::DuckDBManager::GetConnection(true);
+	auto connection = pgduckdb::PgDuckDBManager::GetConnection(true);
 
 	EventTriggerData *trigdata = (EventTriggerData *)fcinfo->context;
 	char *alter_table_stmt_string;

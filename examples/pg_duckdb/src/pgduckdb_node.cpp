@@ -146,7 +146,7 @@ Duckdb_BeginCustomScan_Cpp(CustomScanState *cscanstate, EState *estate, int /*ef
 		}
 	}
 
-	duckdb_scan_state->duckdb_connection = pgduckdb::DuckDBManager::GetConnection();
+	duckdb_scan_state->duckdb_connection = pgduckdb::PgDuckDBManager::GetConnection();
 	duckdb_scan_state->prepared_statement = prepared_query.release();
 	duckdb_scan_state->params = estate->es_param_list_info;
 	duckdb_scan_state->is_executed = false;

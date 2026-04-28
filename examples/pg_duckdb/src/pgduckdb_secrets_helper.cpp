@@ -175,7 +175,7 @@ const char *
 GetQueryError(const char *query, List *server_options) {
 	// Create a new connection on the DB so we can create the secret and rollback without modifying the transaction
 	// state of the main connection.
-	auto con = pgduckdb::DuckDBManager::CreateConnection();
+	auto con = pgduckdb::PgDuckDBManager::CreateConnection();
 
 	auto tx_query = duckdb::StringUtil::Format("BEGIN; %s", query);
 	auto res = con->Query(tx_query);

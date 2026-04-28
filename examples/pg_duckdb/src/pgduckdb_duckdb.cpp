@@ -1,16 +1,11 @@
-// pg_duckdb's DuckDBManager. Formerly split between lib's
-// pgduckdb_duckdb.cpp (class body) and ext's pgduckdb_lib_hooks.cpp
-// (lifecycle callback bodies + TypeResolver + storage options); the
-// inversion merges them back into ext so lib carries no DuckDBManager
-// symbols and no hooks.
-//
-// Initialize() constructs the duckdb::DuckDB instance with a DBConfig
-// built from pg_duckdb GUCs, attaches the 'pgduckdb' storage extension
-// with pg_duckdb's TypeResolver + PostgresStorageOptions wired in, and
-// performs the post-init plumbing (TimeZone / collation / pg_temp /
-// INSTALL LOAD).  CreateConnection / GetConnection run the execution-
-// allowed check and then RefreshConnectionState before handing out the
-// connection.
+// pg_duckdb's PgDuckDBManager. Subclass of pgduckdb::DuckDBManager (the slim
+// lazy-singleton lib base). The base owns the duckdb::DuckDB pointer + the
+// lazy GetDatabase() / Reset() shape; this file owns the GUC-driven DBConfig
+// (Configure), the post-construction plumbing (OnInitialized: storage
+// extension register, ATTACH pgduckdb / pg_temp, TimeZone / collation,
+// INSTALL/LOAD), and the cached-connection / refresh-state machinery
+// (CreateConnection / GetConnection / RefreshConnectionState / secrets_valid /
+// extensions_table_seq).
 
 #include <filesystem>
 
@@ -255,11 +250,11 @@ GetTypeResolver() {
 namespace ddb {
 bool
 DidWrites() {
-	if (!DuckDBManager::IsInitialized()) {
+	if (!PgDuckDBManager::IsInitialized()) {
 		return false;
 	}
 
-	auto connection = DuckDBManager::GetConnectionUnsafe();
+	auto connection = PgDuckDBManager::GetConnectionUnsafe();
 	auto &context = *connection->context;
 	return DidWrites(context);
 }
@@ -274,16 +269,20 @@ DidWrites(duckdb::ClientContext &context) {
 } // namespace ddb
 
 // ------------------------------------------------------------------
-// DuckDBManager
+// PgDuckDBManager
 // ------------------------------------------------------------------
 
-DuckDBManager DuckDBManager::manager_instance;
+PgDuckDBManager PgDuckDBManager::manager_instance;
 
+// pg_duckdb owns the full Initialize: builds a GUC-driven DBConfig and
+// passes it to DuckDB("", &config). The base path uses DuckDB(nullptr) and
+// is not parameterizable -- see lib header. ThreadSignalBlockGuard scopes
+// the entire construction window so DuckDB worker threads don't inherit a
+// signal mask that lets them steal signals from the Postgres main thread.
 void
-DuckDBManager::Initialize() {
-	elog(DEBUG2, "(PGDuckDB/DuckDBManager) Creating DuckDB instance");
+PgDuckDBManager::Initialize() {
+	elog(DEBUG2, "(PGDuckDB/PgDuckDBManager) Creating DuckDB instance");
 
-	// Block signals before initializing DuckDB to ensure signal is handled by the Postgres main thread only
 	pgduckdb::ThreadSignalBlockGuard guard;
 
 	duckdb::DBConfig config;
@@ -331,9 +330,13 @@ DuckDBManager::Initialize() {
 		SET_DUCKDB_OPTION_FROM_GUC(threads);
 	}
 
-	database = new duckdb::DuckDB(/*connection_string=*/"", &config);
+	database = new duckdb::DuckDB("", &config);
+	OnInitialized(*database);
+}
 
-	auto &dbconfig = duckdb::DBConfig::GetConfig(*database->instance);
+void
+PgDuckDBManager::OnInitialized(duckdb::DuckDB &db) {
+	auto &dbconfig = duckdb::DBConfig::GetConfig(*db.instance);
 	// Pass the provider (not a frozen snapshot) so scans pick up SET-at-runtime
 	// changes to duckdb.log_pg_explain / threads_for_postgres_scan / etc.
 	// v1.5: storage/optimizer extensions are registered via the new static
@@ -342,13 +345,13 @@ DuckDBManager::Initialize() {
 	    dbconfig, "pgduckdb",
 	    duckdb::make_shared_ptr<PostgresStorageExtension>(&MakePgDuckDBStorageOptions, &g_pg_duckdb_type_resolver));
 
-	auto &extension_manager = database->instance->GetExtensionManager();
+	auto &extension_manager = db.instance->GetExtensionManager();
 	auto extension_active_load = extension_manager.BeginLoad("pgduckdb");
 	D_ASSERT(extension_active_load);
 	duckdb::ExtensionInstallInfo extension_install_info;
 	extension_active_load->FinishLoad(extension_install_info);
 
-	connection = duckdb::make_uniq<duckdb::Connection>(*database);
+	connection = duckdb::make_uniq<duckdb::Connection>(db);
 
 	auto &context = *connection->context;
 
@@ -374,14 +377,17 @@ DuckDBManager::Initialize() {
 }
 
 void
-DuckDBManager::Reset() {
-	manager_instance.connection = nullptr;
-	delete manager_instance.database;
-	manager_instance.database = nullptr;
+PgDuckDBManager::OnReset() {
+	connection = nullptr;
 }
 
 void
-DuckDBManager::RefreshConnectionState(duckdb::ClientContext &context) {
+PgDuckDBManager::Reset() {
+	manager_instance.DuckDBManager::Reset();
+}
+
+void
+PgDuckDBManager::RefreshConnectionState(duckdb::ClientContext &context) {
 	std::string disabled_filesystems = DisabledFileSystems();
 	if (disabled_filesystems != "") {
 		/*
@@ -417,11 +423,11 @@ DuckDBManager::RefreshConnectionState(duckdb::ClientContext &context) {
  * of the global cached connection that is returned by GetConnection.
  */
 duckdb::unique_ptr<duckdb::Connection>
-DuckDBManager::CreateConnection() {
+PgDuckDBManager::CreateConnection() {
 	pgduckdb::RequireDuckdbExecution();
 
 	auto &instance = Get();
-	auto connection = duckdb::make_uniq<duckdb::Connection>(*instance.database);
+	auto connection = duckdb::make_uniq<duckdb::Connection>(instance.GetDatabase());
 	auto &context = *connection->context;
 
 	instance.RefreshConnectionState(context);
@@ -431,7 +437,7 @@ DuckDBManager::CreateConnection() {
 
 /* Returns the cached connection to the global DuckDB instance. */
 duckdb::Connection *
-DuckDBManager::GetConnection(bool force_transaction) {
+PgDuckDBManager::GetConnection(bool force_transaction) {
 	pgduckdb::RequireDuckdbExecution();
 
 	auto &instance = Get();
@@ -467,7 +473,7 @@ DuckDBManager::GetConnection(bool force_transaction) {
  * current query, and you just want a pointer to it.
  */
 duckdb::Connection *
-DuckDBManager::GetConnectionUnsafe() {
+PgDuckDBManager::GetConnectionUnsafe() {
 	auto &instance = Get();
 	return instance.connection.get();
 }
@@ -478,8 +484,8 @@ DuckDBManager::GetConnectionUnsafe() {
  */
 void
 InvalidateDuckDBSecretsIfInitialized() {
-	if (DuckDBManager::IsInitialized()) {
-		DuckDBManager::Get().secrets_valid = false;
+	if (PgDuckDBManager::IsInitialized()) {
+		PgDuckDBManager::Get().secrets_valid = false;
 	}
 }
 
@@ -487,13 +493,13 @@ InvalidateDuckDBSecretsIfInitialized() {
 // DuckDBQueryOrThrow(const std::string&) -- the "no connection argument"
 // overload used by pg_duckdb call sites that want the current cached
 // connection. Formerly in lib; moves here because it depends on
-// DuckDBManager. The other two overloads (taking a context / connection
+// PgDuckDBManager. The other two overloads (taking a context / connection
 // ref) stay in lib.
 // ------------------------------------------------------------------
 
 duckdb::unique_ptr<duckdb::QueryResult>
 DuckDBQueryOrThrow(const std::string &query) {
-	auto connection = pgduckdb::DuckDBManager::GetConnection();
+	auto connection = pgduckdb::PgDuckDBManager::GetConnection();
 	return DuckDBQueryOrThrow(*connection, query);
 }
 

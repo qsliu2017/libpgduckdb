@@ -33,7 +33,7 @@ MakeDirName(const char *name) {
 template <typename T>
 bool
 GucCheckDuckDBNotInitdHook(T *, void **, GucSource) {
-	if (pgduckdb::DuckDBManager::IsInitialized()) {
+	if (pgduckdb::PgDuckDBManager::IsInitialized()) {
 		GUC_check_errmsg("Cannot set this variable after DuckDB has been initialized. Reconnect to Postgres or use "
 		                 "`duckdb.recycle_ddb()` to reset "
 		                 "the DuckDB instance.");
@@ -265,7 +265,7 @@ DuckAssignTimezone_Cpp(const char *tz) {
 		return;
 	}
 
-	if (!DuckDBManager::IsInitialized()) {
+	if (!PgDuckDBManager::IsInitialized()) {
 		return;
 	}
 
@@ -274,7 +274,7 @@ DuckAssignTimezone_Cpp(const char *tz) {
 	// transaction context to be active in Postgres to be able to call
 	// RefreshConnectionState, and GUCs can be changed outside of transaction
 	// blocks (for instance by being reverted due to SET LOCAL or by SIGHUP)
-	auto connection = pgduckdb::DuckDBManager::GetConnectionUnsafe();
+	auto connection = pgduckdb::PgDuckDBManager::GetConnectionUnsafe();
 	pgduckdb::DuckDBQueryOrThrow(*connection, "SET TimeZone =" + duckdb::KeywordHelper::WriteQuoted(tz));
 	elog(DEBUG2, "[PGDuckDB] Set DuckDB option: 'TimeZone'=%s", tz);
 }

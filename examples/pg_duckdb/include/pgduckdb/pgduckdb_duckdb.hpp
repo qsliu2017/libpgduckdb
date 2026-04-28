@@ -1,14 +1,17 @@
 #pragma once
 
-// pg_duckdb's DuckDBManager. Owns the single duckdb::DuckDB instance + the
-// cached connection, plus all pg_duckdb-specific lifecycle glue (GUC-driven
-// DBConfig, secret / extension / optimizer installation, per-connection
-// refresh of secrets / extensions / disabled filesystems).
+// pg_duckdb's PgDuckDBManager. Subclass of libpgduckdb's slim
+// pgduckdb::DuckDBManager (lazy-singleton + 3 virtual hooks). This file owns
+// pg_duckdb's specifics: cached connection, GUC-driven DBConfig, secret /
+// extension / optimizer installation, per-connection refresh of secrets /
+// extensions / disabled filesystems.
 //
-// Previously split into: lib's pgduckdb_duckdb.{cpp,hpp} (the class body) +
-// ext's pgduckdb_lib_hooks.cpp (the lifecycle callbacks). The inversion
-// folds both back together here, so libpgduckdb_core.a carries no
-// DuckDBManager symbols and no hooks function pointers.
+// Lifecycle history: previously split into lib's pgduckdb_duckdb.{cpp,hpp} +
+// ext's pgduckdb_lib_hooks.cpp; the inversion folded both into ext. The
+// current shape factors out only the lazy-singleton nucleus into lib so
+// pg_ducklake can subclass too, while pg_duckdb keeps its full lifecycle here.
+
+#include "pgduckdb/pgduckdb_duckdb_manager.hpp"
 
 #include "duckdb.hpp"
 
@@ -19,18 +22,16 @@ bool DidWrites();
 bool DidWrites(duckdb::ClientContext &context);
 } // namespace ddb
 
-class DuckDBManager {
+class PgDuckDBManager : public DuckDBManager {
 public:
 	static inline bool
 	IsInitialized() {
-		return manager_instance.database != nullptr;
+		return manager_instance.DuckDBManager::IsInitialized();
 	}
 
-	static inline DuckDBManager &
+	static inline PgDuckDBManager &
 	Get() {
-		if (!manager_instance.database) {
-			manager_instance.Initialize();
-		}
+		(void)manager_instance.GetDatabase(); // lazy-init through the base
 		return manager_instance;
 	}
 
@@ -43,42 +44,32 @@ public:
 		return default_dbname;
 	}
 
-	inline duckdb::DuckDB &
-	GetDatabase() {
-		return *database;
-	}
-
 	static void Reset();
 
+protected:
+	// Override Initialize() so we can build a GUC-driven DBConfig and pass it
+	// to duckdb::DuckDB(""). The base's Initialize uses DuckDB(nullptr) which
+	// doesn't take a config; passing one stack-locally would dangle (see
+	// pgduckdb_duckdb_manager.hpp).
+	void Initialize() override;
+	void OnInitialized(duckdb::DuckDB &db) override;
+	void OnReset() override;
+
 private:
-	DuckDBManager() : database(nullptr), connection(nullptr), default_dbname("<!UNSET!>") {
-	}
+	PgDuckDBManager() = default;
 
-	DuckDBManager(const DuckDBManager &) = delete;
-	DuckDBManager &operator=(const DuckDBManager &) = delete;
+	PgDuckDBManager(const PgDuckDBManager &) = delete;
+	PgDuckDBManager &operator=(const PgDuckDBManager &) = delete;
 
-	static DuckDBManager manager_instance;
-
-	void Initialize();
+	static PgDuckDBManager manager_instance;
 
 	// Refreshes per-connection state (secrets, extensions, disabled
 	// filesystems, azure transport option). Called at the top of
 	// CreateConnection / GetConnection.
 	void RefreshConnectionState(duckdb::ClientContext &context);
 
-	/*
-	 * FIXME: Use a unique_ptr instead of a raw pointer. For now this is not
-	 * possible because some DuckDB extensions (historically MotherDuck) could
-	 * cause an ABORT when the DuckDB database's destructor runs at process
-	 * exit, crashing Postgres. Not running the destructor also doesn't really
-	 * have any downsides since the process is going to die anyway. It's even
-	 * slightly more efficient not to run the destructor at all. But we should
-	 * still fix this, because running the destructor is a good way to find
-	 * bugs (such as the one originally reported in duckdb/pg_duckdb#279).
-	 */
-	duckdb::DuckDB *database;
 	duckdb::unique_ptr<duckdb::Connection> connection;
-	std::string default_dbname;
+	std::string default_dbname = "<!UNSET!>";
 
 	// Per-backend state that tracks whether the cached connection's
 	// duckdb_secrets / extensions are up-to-date. RefreshConnectionState

@@ -14,6 +14,7 @@
 #include "duckdb/main/database.hpp"
 
 #include "pgduckdb/pgduckdb_contracts.hpp"
+#include "pgduckdb/pgduckdb_duckdb_manager.hpp"
 #include "pgduckdb/pgduckdb_process_lock.hpp"
 #include "pgducklake/pgducklake_defs.hpp"
 
@@ -50,16 +51,28 @@ namespace {
 
 // --- Backend-local DuckDB instance ---------------------------------------
 //
-// A single duckdb::DuckDB per backend. Constructed lazily on the first call
-// that needs it (see pgducklake::DuckdbIsInitialized / EnsureInitialized
-// below) and destroyed by DuckdbRecycleDuckDB. The pointer is guarded by
+// A single duckdb::DuckDB per backend, owned by a DuckLakeManager subclass
+// of libpgduckdb's lazy-singleton DuckDBManager base. The base handles
+// lazy ctor + Reset; we override only OnInitialized to replay the
+// pg_ducklake extension-load callback. Access is guarded by
 // GlobalProcessLock because DuckDB worker threads may also touch it.
-std::unique_ptr<duckdb::DuckDB> g_duckdb_instance;
 
 // Callback registered by pg_ducklake's _PG_init -- invoked every time we
 // (re)construct the backend's DuckDB instance so extensions/macros/catalogs
 // get reattached.
 pgduckdb::DuckDBLoadExtension g_load_extension_cb = nullptr;
+
+class DuckLakeManager : public pgduckdb::DuckDBManager {
+protected:
+	void
+	OnInitialized(duckdb::DuckDB &db) override {
+		if (g_load_extension_cb) {
+			g_load_extension_cb(db);
+		}
+	}
+};
+
+DuckLakeManager g_manager;
 
 // --- Local flags replacing pg_duckdb's global state ----------------------
 //
@@ -255,13 +268,13 @@ DuckdbIsAlterTableInProgress(void) {
 
 bool
 DuckdbIsInitialized(void) {
-	return g_duckdb_instance != nullptr;
+	return g_manager.IsInitialized();
 }
 
 void
 DuckdbRecycleDuckDB(void) {
 	std::lock_guard<std::recursive_mutex> lock(GlobalProcessLock::GetLock());
-	g_duckdb_instance.reset();
+	g_manager.Reset();
 }
 
 void
@@ -337,13 +350,7 @@ namespace pgducklake {
 duckdb::DuckDB &
 EnsureDuckDBInitialized() {
 	std::lock_guard<std::recursive_mutex> lock(pgduckdb::GlobalProcessLock::GetLock());
-	if (!g_duckdb_instance) {
-		g_duckdb_instance = std::make_unique<duckdb::DuckDB>(nullptr);
-		if (g_load_extension_cb) {
-			g_load_extension_cb(*g_duckdb_instance);
-		}
-	}
-	return *g_duckdb_instance;
+	return g_manager.GetDatabase();
 }
 
 void

@@ -221,11 +221,11 @@ DuckdbXactCallback_Cpp(XactEvent event) {
 	executor_nest_level = 0;
 
 	/* If DuckDB is not initialized there's no need to do anything */
-	if (!DuckDBManager::IsInitialized()) {
+	if (!PgDuckDBManager::IsInitialized()) {
 		return;
 	}
 
-	auto connection = DuckDBManager::GetConnectionUnsafe();
+	auto connection = PgDuckDBManager::GetConnectionUnsafe();
 	auto &context = *connection->context;
 
 	switch (event) {
@@ -302,10 +302,10 @@ DuckdbXactCallback(XactEvent event, void * /*arg*/) {
  */
 static void
 DuckdbSubXactCallback_Cpp(SubXactEvent event) {
-	if (!DuckDBManager::IsInitialized()) {
+	if (!PgDuckDBManager::IsInitialized()) {
 		return;
 	}
-	auto connection = DuckDBManager::GetConnectionUnsafe();
+	auto connection = PgDuckDBManager::GetConnectionUnsafe();
 	auto &context = *connection->context;
 	if (!context.transaction.HasActiveTransaction()) {
 		return;

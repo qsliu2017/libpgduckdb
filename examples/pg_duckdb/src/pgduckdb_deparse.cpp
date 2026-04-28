@@ -82,7 +82,7 @@ namespace pgduckdb {
  */
 static const char *
 PgDuckdbDefaultDatabaseName(void) {
-	return DuckDBManager::Get().GetDefaultDBName().c_str();
+	return PgDuckDBManager::Get().GetDefaultDBName().c_str();
 }
 
 static char *
@@ -525,12 +525,12 @@ PgDuckdbDbAndSchema(const char *postgres_schema_name, const char *duckdb_table_a
 
 	if (strcmp("public", postgres_schema_name) == 0) {
 		/* Use the "main" schema in DuckDB for tables in the public schema in Postgres */
-		auto dbname = DuckDBManager::Get().GetDefaultDBName().c_str();
+		auto dbname = PgDuckDBManager::Get().GetDefaultDBName().c_str();
 		return list_make2((void *)dbname, (void *)"main");
 	}
 
 	if (!IsDuckdbSchemaName(postgres_schema_name)) {
-		auto dbname = DuckDBManager::Get().GetDefaultDBName().c_str();
+		auto dbname = PgDuckDBManager::Get().GetDefaultDBName().c_str();
 		return list_make2((void *)dbname, (void *)postgres_schema_name);
 	}
 
