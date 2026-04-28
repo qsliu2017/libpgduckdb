@@ -160,6 +160,121 @@ jobs:
         if: failure() && steps.installcheck.outcome == 'failure'
         run: cat duckdb/examples/pg_duckdb/test/regression/log/postmaster.log
 
+  pg_ducklake:
+    name: "Build and test examples/pg_ducklake"
+    # Bound runtime so the known DuckLake metadata-manager deadlock (see
+    # pgducklake_metadata_manager.cpp:519 EnsureSnapshotTrigger vs the
+    # main-thread GlobalProcessLock during ATTACH 'ducklake:...') doesn't
+    # burn a full 6-hour Actions slot. 45min covers a clean run with
+    # generous headroom; a hang fails the cell promptly.
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - version: REL_14_STABLE
+          type: Release
+        - version: REL_15_STABLE
+          type: Release
+        - version: REL_16_STABLE
+          type: Release
+        - version: REL_17_STABLE
+          type: Release
+        - version: REL_18_STABLE
+          type: ReleaseStatic
+        - version: REL_18_STABLE
+          type: Debug
+
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Test details
+        run: echo Build and test examples/pg_ducklake with PostgreSQL ${{ matrix.version }} / ${{ matrix.type }}
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y build-essential libreadline-dev zlib1g-dev flex bison libxml2-dev libxslt-dev \
+            libssl-dev libxml2-utils xsltproc pkg-config libc++-dev libc++abi-dev libglib2.0-dev libtinfo6 cmake \
+            libstdc++-12-dev ninja-build libcurl4-openssl-dev liblz4-dev
+          echo "${PWD}/postgres/inst/bin:$PATH" >> $GITHUB_PATH
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ubuntu-24.04-${{ matrix.version }}-${{ matrix.type }}-ducklake
+          create-symlink: true
+
+      - name: Checkout pg_duckdb code
+        uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+          path: duckdb
+
+      - name: Checkout PostgreSQL code
+        run: |
+          rm -rf postgres
+          git clone --branch ${{ matrix.version }} --single-branch --depth 1 https://github.com/postgres/postgres.git
+
+      - name: Compute Version SHAs
+        id: versions
+        run: |
+          pushd duckdb/third_party/duckdb
+          DUCKDB_SHA=`git rev-parse HEAD`
+          echo "duckdb_sha=${DUCKDB_SHA}" >> "$GITHUB_OUTPUT"
+          popd
+          pushd postgres
+          POSTGRES_SHA=`git rev-parse HEAD`
+          echo "postgres_sha=${POSTGRES_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup PG build cache
+        id: cache-pg-build
+        uses: actions/cache@v4
+        with:
+          path: postgres/inst
+          key: pg-build-ubuntu-24.04-${{ steps.versions.outputs.postgres_sha }}
+
+      - name: Build PostgreSQL code
+        if: steps.cache-pg-build.outputs.cache-hit != 'true'
+        working-directory: postgres
+        run: |
+          ./configure --prefix=$PWD/inst/ --enable-cassert --enable-debug --with-openssl --with-icu --with-libxml --with-lz4
+          make -j8 install
+
+      - name: Setup DuckDB build cache
+        id: cache-duckdb-build
+        uses: actions/cache@v4
+        with:
+          path: duckdb/third_party/duckdb/build-pg_ducklake/
+          key: duckdb-build-ubuntu-24.04-pg_ducklake-${{ matrix.type }}-${{ steps.versions.outputs.duckdb_sha }}-${{ hashFiles('duckdb/third_party/duckdb-patches/*.patch') }}-ninja
+
+      - name: Build and install pg_ducklake
+        id: build
+        working-directory: duckdb/examples/pg_ducklake
+        run: make -j8 install DUCKDB_BUILD=${{ matrix.type }}
+
+      - name: Run make installcheck
+        # Runs both check-regression-ducklake and check-isolation-ducklake
+        # (see examples/pg_ducklake/Makefile).
+        id: installcheck
+        working-directory: duckdb/examples/pg_ducklake
+        run: make installcheck DUCKDB_BUILD=${{ matrix.type }}
+
+      - name: Print regression.diffs if regression tests failed
+        if: failure() && steps.installcheck.outcome == 'failure'
+        run: cat duckdb/examples/pg_ducklake/test/regression/regression.diffs && false
+
+      - name: Print isolation regression.diffs if isolation tests failed
+        if: failure() && steps.installcheck.outcome == 'failure'
+        # Isolation produces its own regression.diffs under test/isolation/.
+        # Use `|| true` so the step survives when only the regression suite
+        # failed -- the previous step has already surfaced that diff.
+        run: cat duckdb/examples/pg_ducklake/test/isolation/regression.diffs || true
+
+      - name: Print postmaster.log if regression tests failed
+        if: failure() && steps.installcheck.outcome == 'failure'
+        run: cat duckdb/examples/pg_ducklake/test/regression/log/postmaster.log
+
   pg_parquet:
     name: "Build examples/pg_parquet (stub)"
     runs-on: ubuntu-24.04
