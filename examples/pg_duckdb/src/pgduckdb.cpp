@@ -14,6 +14,14 @@ extern "C" {
 #include "pgduckdb/pgduckdb_types.hpp"
 #include "pgduckdb/pgduckdb_xact.hpp"
 
+/*
+ * pg_duckdb's CustomScan identity. The address of duckdb_scan_scan_methods
+ * is what IsDuckdbPlan compares against; the name "DuckDBScan" is what
+ * RegisterCustomScanMethods keys on in PG's process-global hash.
+ */
+CustomScanMethods duckdb_scan_scan_methods;
+static CustomExecMethods duckdb_scan_exec_methods;
+
 extern "C" {
 
 #ifdef PG_MODULE_MAGIC_EXT
@@ -39,7 +47,7 @@ _PG_init(void) {
 	pgduckdb::InitRuleutilsHooks();
 	pgduckdb::InitTypeHooks();
 	DuckdbInitHooks();
-	DuckdbInitNode();
+	DuckdbInitNode("DuckDBScan", &duckdb_scan_scan_methods, &duckdb_scan_exec_methods);
 	pgduckdb::InitBackgroundWorkersShmem();
 	pgduckdb::RegisterDuckdbXactCallback();
 }

@@ -115,7 +115,7 @@ CreatePlan(Query *query, bool throw_error) {
 	}
 
 	duckdb_node->custom_private = list_make1(query);
-	duckdb_node->methods = &duckdb_scan_scan_methods;
+	duckdb_node->methods = DuckdbGetScanMethods();
 
 	return (Plan *)duckdb_node;
 }

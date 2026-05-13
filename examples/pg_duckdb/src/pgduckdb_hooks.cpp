@@ -37,6 +37,9 @@ extern "C" {
 #include "pgddb/pgddb_node.hpp"
 #include "pgddb/utility/cpp_wrapper.hpp"
 
+/* Defined in pgduckdb.cpp; IsDuckdbPlan compares CustomScan->methods to its address. */
+extern CustomScanMethods duckdb_scan_scan_methods;
+
 static planner_hook_type prev_planner_hook = NULL;
 static ExecutorStart_hook_type prev_executor_start_hook = NULL;
 static ExecutorFinish_hook_type prev_executor_finish_hook = NULL;

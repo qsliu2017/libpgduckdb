@@ -27,11 +27,14 @@ duckdb::ExplainFormat duckdb_explain_format = duckdb::ExplainFormat::DEFAULT;
 
 #define NEED_JSON_PLAN(explain_format) (explain_format == duckdb::ExplainFormat::JSON)
 
-/* global variables */
-CustomScanMethods duckdb_scan_scan_methods;
-
-/* static variables */
-static CustomExecMethods duckdb_scan_exec_methods;
+/*
+ * Consumer-owned slots are wired up by DuckdbInitNode at _PG_init time.
+ * Both pointers are read by libpgddb's own CustomScan callbacks; the
+ * scan-methods pointer is also exposed via DuckdbGetScanMethods so that
+ * pgddb_planner.cpp's CreatePlan can stamp it onto the CustomScan node.
+ */
+static CustomScanMethods *configured_scan_methods = nullptr;
+static CustomExecMethods *configured_exec_methods = nullptr;
 
 typedef struct DuckdbScanState {
 	CustomScanState css; /* must be first field */
@@ -78,7 +81,7 @@ Duckdb_CreateCustomScanState(CustomScan *cscan) {
 	duckdb_scan_state->custom_scan = cscan;
 
 	duckdb_scan_state->query = (const Query *)linitial(cscan->custom_private);
-	custom_scan_state->methods = &duckdb_scan_exec_methods;
+	custom_scan_state->methods = configured_exec_methods;
 	return (Node *)custom_scan_state;
 }
 
@@ -427,27 +430,35 @@ Duckdb_ExplainCustomScan(CustomScanState *node, List * /*ancestors*/, ExplainSta
 }
 
 void
-DuckdbInitNode() {
+DuckdbInitNode(const char *custom_scan_name, CustomScanMethods *scan_methods, CustomExecMethods *exec_methods) {
 	/* setup scan methods */
-	memset(&duckdb_scan_scan_methods, 0, sizeof(duckdb_scan_scan_methods));
-	duckdb_scan_scan_methods.CustomName = "DuckDBScan";
-	duckdb_scan_scan_methods.CreateCustomScanState = Duckdb_CreateCustomScanState;
-	RegisterCustomScanMethods(&duckdb_scan_scan_methods);
+	memset(scan_methods, 0, sizeof(*scan_methods));
+	scan_methods->CustomName = custom_scan_name;
+	scan_methods->CreateCustomScanState = Duckdb_CreateCustomScanState;
+	RegisterCustomScanMethods(scan_methods);
 
 	/* setup exec methods */
-	memset(&duckdb_scan_exec_methods, 0, sizeof(duckdb_scan_exec_methods));
-	duckdb_scan_exec_methods.CustomName = "DuckDBScan";
+	memset(exec_methods, 0, sizeof(*exec_methods));
+	exec_methods->CustomName = custom_scan_name;
 
-	duckdb_scan_exec_methods.BeginCustomScan = Duckdb_BeginCustomScan;
-	duckdb_scan_exec_methods.ExecCustomScan = Duckdb_ExecCustomScan;
-	duckdb_scan_exec_methods.EndCustomScan = Duckdb_EndCustomScan;
-	duckdb_scan_exec_methods.ReScanCustomScan = Duckdb_ReScanCustomScan;
+	exec_methods->BeginCustomScan = Duckdb_BeginCustomScan;
+	exec_methods->ExecCustomScan = Duckdb_ExecCustomScan;
+	exec_methods->EndCustomScan = Duckdb_EndCustomScan;
+	exec_methods->ReScanCustomScan = Duckdb_ReScanCustomScan;
 
-	duckdb_scan_exec_methods.EstimateDSMCustomScan = NULL;
-	duckdb_scan_exec_methods.InitializeDSMCustomScan = NULL;
-	duckdb_scan_exec_methods.ReInitializeDSMCustomScan = NULL;
-	duckdb_scan_exec_methods.InitializeWorkerCustomScan = NULL;
-	duckdb_scan_exec_methods.ShutdownCustomScan = NULL;
+	exec_methods->EstimateDSMCustomScan = NULL;
+	exec_methods->InitializeDSMCustomScan = NULL;
+	exec_methods->ReInitializeDSMCustomScan = NULL;
+	exec_methods->InitializeWorkerCustomScan = NULL;
+	exec_methods->ShutdownCustomScan = NULL;
 
-	duckdb_scan_exec_methods.ExplainCustomScan = Duckdb_ExplainCustomScan;
+	exec_methods->ExplainCustomScan = Duckdb_ExplainCustomScan;
+
+	configured_scan_methods = scan_methods;
+	configured_exec_methods = exec_methods;
+}
+
+CustomScanMethods *
+DuckdbGetScanMethods(void) {
+	return configured_scan_methods;
 }
