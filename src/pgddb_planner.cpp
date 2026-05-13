@@ -1,11 +1,10 @@
-#include "pgduckdb/pgduckdb_planner.hpp"
+#include "pgddb/pgddb_planner.hpp"
 
 #include "duckdb.hpp"
 
 #include "pgddb/catalog/pgddb_transaction.hpp"
 #include "pgddb/scan/postgres_scan.hpp"
 #include "pgddb/pgddb_types.hpp"
-#include "pgduckdb/pgduckdb_planner.hpp"
 
 extern "C" {
 #include "postgres.h"
@@ -33,7 +32,7 @@ extern "C" {
 }
 
 #include "pgddb/pgddb_duckdb.hpp"
-#include "pgduckdb/pgduckdb_node.hpp"
+#include "pgddb/pgddb_node.hpp"
 #include "pgddb/vendor/pg_list.hpp"
 #include "pgddb/utility/cpp_wrapper.hpp"
 #include "pgddb/pgddb_types.hpp"

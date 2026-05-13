@@ -4,7 +4,7 @@
 #include "duckdb/common/exception.hpp"
 
 #include "pgduckdb/pgduckdb_hooks.hpp"
-#include "pgduckdb/pgduckdb_planner.hpp"
+#include "pgddb/pgddb_planner.hpp"
 #include "pgddb/pgddb_types.hpp"
 #include "pgddb/vendor/pg_explain.hpp"
 #include "pgddb/pg/explain.hpp"
@@ -17,7 +17,7 @@ extern "C" {
 #include "utils/ruleutils.h"
 }
 
-#include "pgduckdb/pgduckdb_node.hpp"
+#include "pgddb/pgddb_node.hpp"
 #include "pgddb/pgddb_duckdb.hpp"
 #include "pgddb/utility/cpp_wrapper.hpp"
 

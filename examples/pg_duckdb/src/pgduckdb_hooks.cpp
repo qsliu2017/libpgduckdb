@@ -1,6 +1,6 @@
 #include "duckdb.hpp"
 
-#include "pgduckdb/pgduckdb_planner.hpp"
+#include "pgddb/pgddb_planner.hpp"
 #include "pgddb/pg/transactions.hpp"
 #include "pgddb/pg/explain.hpp"
 #include "pgduckdb/pgduckdb_xact.hpp"
@@ -34,7 +34,7 @@ extern "C" {
 #include "pgduckdb/utility/copy.hpp"
 #include "pgddb/vendor/pg_explain.hpp"
 #include "pgddb/vendor/pg_list.hpp"
-#include "pgduckdb/pgduckdb_node.hpp"
+#include "pgddb/pgddb_node.hpp"
 #include "pgddb/utility/cpp_wrapper.hpp"
 
 static planner_hook_type prev_planner_hook = NULL;

@@ -1,10 +1,9 @@
-#include "pgduckdb/pgduckdb_planner.hpp"
+#include "pgddb/pgddb_planner.hpp"
 #include "pgddb/pgddb_utils.hpp"
 #include "pgduckdb/pgduckdb_xact.hpp"
 #include "pgduckdb/pgduckdb_guc.hpp"
 #include "pgduckdb/pgduckdb_ddl.hpp"
 #include "pgduckdb/pgduckdb_hooks.hpp"
-#include "pgduckdb/pgduckdb_planner.hpp"
 #include "pgddb/pg/string_utils.hpp"
 
 extern "C" {
