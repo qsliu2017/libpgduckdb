@@ -191,18 +191,53 @@ DuckDBManager::OnPostInit(duckdb::ClientContext &context) {
 	 * `<storage_catalog>.schema.table` references. Mirrors upstream
 	 * pg_duckdb's `ATTACH DATABASE 'pgduckdb' (TYPE pgduckdb)`.
 	 */
-	DuckDBQueryOrThrow(context,
+	QueryOrThrow(context,
 	                   "ATTACH DATABASE '" PGDUCKLAKE_PG_STORAGE_CATALOG "' (TYPE " PGDUCKLAKE_PG_STORAGE_CATALOG ")");
 }
 
 } // namespace pgducklake
 
-namespace pgddb {
-duckdb::unique_ptr<DuckDBManager>
-GetManagerInstance() {
-	return duckdb::make_uniq<pgducklake::DuckDBManager>();
+namespace pgducklake {
+
+duckdb::unique_ptr<DuckDBManager> DuckDBManager::instance_;
+
+bool
+DuckDBManager::IsInitialized() {
+	return instance_ != nullptr && instance_->database != nullptr;
 }
-} // namespace pgddb
+
+DuckDBManager &
+DuckDBManager::Get() {
+	if (!instance_) {
+		instance_ = duckdb::make_uniq<DuckDBManager>();
+	}
+	if (!instance_->database) {
+		instance_->Initialize();
+	}
+	return *instance_;
+}
+
+void
+DuckDBManager::Reset() {
+	if (!instance_) {
+		return;
+	}
+	instance_->connection = nullptr;
+	delete instance_->database;
+	instance_->database = nullptr;
+}
+
+static duckdb::Connection *
+GetConnectionForScan(bool force_transaction) {
+	return DuckDBManager::Get().GetConnection(force_transaction);
+}
+
+void
+InitDuckDBManager() {
+	::pgddb::pgddb_get_connection_hook = GetConnectionForScan;
+}
+
+} // namespace pgducklake
 
 namespace pgducklake {
 
@@ -303,10 +338,10 @@ InitRuleutilsHooks() {
  */
 static void
 DuckLakeXactCallback(XactEvent event, void * /*arg*/) {
-	if (!::pgddb::DuckDBManager::IsInitialized()) {
+	if (!pgducklake::DuckDBManager::IsInitialized()) {
 		return;
 	}
-	auto *connection = ::pgddb::DuckDBManager::GetConnectionUnsafe();
+	auto *connection = pgducklake::DuckDBManager::Get().GetConnectionUnsafe();
 	if (!connection) {
 		return;
 	}
@@ -356,10 +391,10 @@ SetAllowSubtransaction(bool allow) {
 static void
 DuckLakeSubXactCallback(SubXactEvent event, SubTransactionId /*my_subid*/, SubTransactionId /*parent_subid*/,
                         void * /*arg*/) {
-	if (!::pgddb::DuckDBManager::IsInitialized()) {
+	if (!pgducklake::DuckDBManager::IsInitialized()) {
 		return;
 	}
-	auto *connection = ::pgddb::DuckDBManager::GetConnectionUnsafe();
+	auto *connection = pgducklake::DuckDBManager::Get().GetConnectionUnsafe();
 	if (!connection) {
 		return;
 	}

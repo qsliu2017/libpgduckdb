@@ -49,6 +49,8 @@ void _PG_init(void) {
   pgducklake::RegisterMaintenanceLauncher();
   // Register shared memory for direct-insert planner/exec counters
   pgducklake::InitDirectInsertStatsShmem();
+  // Install the connection hook for libpgddb's scan layer.
+  pgducklake::InitDuckDBManager();
   // Register libpgddb's CustomScan node (for DuckDB-routed plans) and
   // pg_ducklake's own direct-insert CustomScan.
   pgddb::InitNode();

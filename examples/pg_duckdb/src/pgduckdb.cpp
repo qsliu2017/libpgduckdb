@@ -1,4 +1,5 @@
 #include "pgduckdb/pgduckdb.h"
+#include "pgduckdb/pgduckdb_duckdb.hpp"
 #include "pgduckdb/pgduckdb_guc.hpp"
 
 #include "pgddb/pgddb_duckdb.hpp"
@@ -37,6 +38,7 @@ _PG_init(void) {
 		                errhint("Add pg_duckdb to shared_preload_libraries.")));
 	}
 
+	pgduckdb::InitDuckDBManager();
 	pgduckdb::InitGUC();
 	pgduckdb::InitGUCHooks();
 	pgduckdb::InitRuleutilsHooks();
