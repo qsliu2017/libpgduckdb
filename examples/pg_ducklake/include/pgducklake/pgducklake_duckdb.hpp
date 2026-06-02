@@ -9,6 +9,9 @@
 
 #include "pgddb/pgddb_duckdb.hpp"
 
+#include <exception>
+#include <string>
+
 namespace pgducklake {
 
 class DuckDBManager : public ::pgddb::DuckDBManager {
@@ -27,6 +30,30 @@ private:
 // Installs pgddb_get_connection_hook; called from _PG_init.
 void InitDuckDBManager();
 
+/*
+ * Execute a query against the pg_ducklake DuckDB connection and return its
+ * result, throwing a duckdb exception on error. Mirrors pg_duckdb's
+ * DuckDBQueryOrThrow. Thrown exceptions are turned into PG errors by the
+ * DECLARE_PG_FUNCTION / InvokeCPPFunc guard at the entry point (see
+ * utility/cpp_wrapper.hpp); call sites that need cleanup or non-fatal
+ * handling catch them locally instead.
+ *
+ * The (query) overload runs on DuckDBManager::Get()'s cached connection
+ * with the standard transaction policy applied.
+ */
+duckdb::unique_ptr<duckdb::QueryResult> DuckDBQueryOrThrow(duckdb::ClientContext &context, const std::string &query);
+duckdb::unique_ptr<duckdb::QueryResult> DuckDBQueryOrThrow(duckdb::Connection &connection, const std::string &query);
+duckdb::unique_ptr<duckdb::QueryResult> DuckDBQueryOrThrow(const std::string &query);
+
+/*
+ * Extract a human-readable message from an exception thrown by
+ * DuckDBQueryOrThrow. Those exceptions carry a JSON-serialized duckdb
+ * ErrorData blob in what(); this unwraps it to the plain message (matching
+ * the DECLARE_PG_FUNCTION / InvokeCPPFunc guard). Use at local catch sites
+ * that surface the message via elog/ereport instead of re-throwing.
+ */
+std::string DuckDBErrorMessage(const std::exception &e);
+
 } // namespace pgducklake
 
 /*
@@ -35,9 +62,6 @@ void InitDuckDBManager();
  * the DuckLake static extension into it.
  */
 void ducklake_load_extension(duckdb::DuckDB &db);
-
-/* Returns the DuckDB instance, used by FDW for column inference. */
-duckdb::DuckDB *ducklake_get_duckdb_database();
 
 /* Detach the "pgducklake" DuckLake catalog.  Called by the utility hook
  * after DROP EXTENSION so that a subsequent CREATE EXTENSION can

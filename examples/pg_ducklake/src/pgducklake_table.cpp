@@ -604,13 +604,8 @@ DECLARE_PG_FUNCTION(ducklake_create_table_trigger) {
   std::string create_table_ddl(pgddb_get_tabledef(relid));
   elog(DEBUG1, "Creating DuckLake table: %s", create_table_ddl.c_str());
 
-  // Execute CREATE TABLE in DuckDB via raw_query
-  const char *error_msg = nullptr;
-  int result = pgducklake::ExecuteDuckDBQuery(create_table_ddl.c_str(), &error_msg);
-  if (result != 0) {
-    ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-                    errmsg("failed to create DuckLake table: %s", error_msg ? error_msg : "unknown error")));
-  }
+  // Execute CREATE TABLE in DuckDB.
+  pgducklake::DuckDBQueryOrThrow(create_table_ddl);
 
   // Handle CREATE TABLE AS (CTAS) - populate data via DuckDB
   if (IsA(parsetree, CreateTableAsStmt) && !pgducklake::ctas_skip_data) {
@@ -621,12 +616,7 @@ DECLARE_PG_FUNCTION(ducklake_create_table_trigger) {
 
     elog(DEBUG1, "CTAS data population: %s", insert_string.c_str());
 
-    const char *insert_error_msg = nullptr;
-    int insert_result = pgducklake::ExecuteDuckDBQuery(insert_string.c_str(), &insert_error_msg);
-    if (insert_result != 0) {
-      ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("failed to populate DuckLake table via CTAS: %s",
-                                                              insert_error_msg ? insert_error_msg : "unknown error")));
-    }
+    pgducklake::DuckDBQueryOrThrow(insert_string);
   }
 
   PG_RETURN_NULL();
@@ -741,12 +731,12 @@ DECLARE_PG_FUNCTION(ducklake_drop_table_trigger) {
 
     elog(DEBUG1, "Dropping DuckLake table: %s", drop_ddl.c_str());
 
-    const char *error_msg = nullptr;
-    int result = pgducklake::ExecuteDuckDBQuery(drop_ddl.c_str(), &error_msg);
-    if (result != 0) {
+    try {
+      pgducklake::DuckDBQueryOrThrow(drop_ddl);
+    } catch (const std::exception &e) {
       // Log warning but don't fail - table might already be gone
       elog(WARNING, "failed to drop DuckLake table %s.%s: %s", schema_name, table_name,
-           error_msg ? error_msg : "unknown error");
+           pgducklake::DuckDBErrorMessage(e).c_str());
     }
   }
 
@@ -846,12 +836,7 @@ DECLARE_PG_FUNCTION(ducklake_alter_table_trigger) {
 
   elog(DEBUG1, "ALTER TABLE DDL for DuckLake: %s", ddl_str);
 
-  const char *error_msg = nullptr;
-  int result = pgducklake::ExecuteDuckDBQuery(ddl_str, &error_msg);
-  if (result != 0) {
-    ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-                    errmsg("failed to alter DuckLake table: %s", error_msg ? error_msg : "unknown error")));
-  }
+  pgducklake::DuckDBQueryOrThrow(ddl_str);
 
   PG_RETURN_NULL();
 }
@@ -934,12 +919,7 @@ DECLARE_PG_FUNCTION(ducklake_comment_trigger) {
 
   elog(DEBUG1, "COMMENT DDL for DuckLake: %s", comment_ddl.c_str());
 
-  const char *error_msg = nullptr;
-  int result = pgducklake::ExecuteDuckDBQuery(comment_ddl.c_str(), &error_msg);
-  if (result != 0) {
-    ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR),
-                    errmsg("failed to set DuckLake comment: %s", error_msg ? error_msg : "unknown error")));
-  }
+  pgducklake::DuckDBQueryOrThrow(comment_ddl);
 
   PG_RETURN_NULL();
 }

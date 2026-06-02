@@ -31,42 +31,14 @@ extern "C" {
 
 namespace pgducklake {
 
-/*
- * Execute a DuckDB query on libpgddb's cached connection.
- *
- * Returns 0 on success, 1 on error.
- * On error, sets *errmsg_out to a thread-local copy of the message.
- */
-int ExecuteDuckDBQuery(const char *query, const char **errmsg_out) {
-  static thread_local std::string last_error;
-
-  auto SetError = [&](const std::string &msg) {
-    last_error = "(PGDuckLake/ExecuteDuckDBQuery) " + msg;
-    if (errmsg_out)
-      *errmsg_out = last_error.c_str();
-  };
-
-  try {
-    auto *conn = pgducklake::DuckDBManager::Get().GetConnection();
-    auto result = conn->Query(query);
-    if (result->HasError()) {
-      SetError(result->GetError());
-      return 1;
-    }
-    return 0;
-  } catch (const std::exception &e) {
-    SetError(e.what());
-    return 1;
-  }
-}
-
 void SyncDefaultTablePathToDuckDB() {
   if (default_table_path && default_table_path[0] != '\0') {
     std::string set_query =
         "SET ducklake_default_table_path = " + duckdb::KeywordHelper::WriteQuoted(std::string(default_table_path));
-    const char *errmsg = nullptr;
-    if (ExecuteDuckDBQuery(set_query.c_str(), &errmsg) != 0) {
-      elog(WARNING, "failed to sync ducklake.default_table_path to DuckDB: %s", errmsg ? errmsg : "unknown");
+    try {
+      DuckDBQueryOrThrow(set_query);
+    } catch (const std::exception &e) {
+      elog(WARNING, "failed to sync ducklake.default_table_path to DuckDB: %s", DuckDBErrorMessage(e).c_str());
     }
   }
 }

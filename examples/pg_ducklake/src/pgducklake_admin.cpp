@@ -19,7 +19,6 @@
 #include "duckdb/common/types.hpp"
 
 #include "pgducklake/pgducklake_duckdb.hpp"
-#include "pgducklake/pgducklake_duckdb_query.hpp"
 
 #include "pgddb/pgddb_duckdb.hpp"
 #include "pgddb/pg/transactions.hpp"
@@ -51,9 +50,11 @@ ducklake_duckdb_raw_query(PG_FUNCTION_ARGS) {
 	if (PG_ARGISNULL(0))
 		ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED), errmsg("query must not be NULL")));
 	const char *query = text_to_cstring(PG_GETARG_TEXT_PP(0));
-	const char *errmsg_out = nullptr;
-	if (::pgducklake::ExecuteDuckDBQuery(query, &errmsg_out) != 0)
-		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("%s", errmsg_out ? errmsg_out : "unknown error")));
+	try {
+		::pgducklake::DuckDBQueryOrThrow(query);
+	} catch (const std::exception &e) {
+		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("%s", e.what())));
+	}
 	PG_RETURN_VOID();
 }
 

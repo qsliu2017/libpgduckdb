@@ -1,21 +1,13 @@
 #pragma once
 
 /*
- * pgducklake_duckdb_query.hpp — Helpers for executing DuckDB queries via
- * pg_duckdb
+ * pgducklake_duckdb_query.hpp — DuckDB GUC sync helper.
  *
- * Provides wrappers around duckdb.raw_query() for executing DuckDB queries
- * from pg_ducklake code.
+ * DuckDB query execution lives in pgducklake_duckdb.hpp
+ * (DuckDBQueryOrThrow).
  */
 
 namespace pgducklake {
-
-/*
- * Execute a DuckDB query via pg_duckdb's duckdb.raw_query() UDF.
- * Returns 0 on success, 1 on error.
- * On error, sets *errmsg_out to the error message (if non-null).
- */
-int ExecuteDuckDBQuery(const char *query, const char **errmsg_out);
 
 /*
  * Sync the ducklake.default_table_path PG GUC to DuckDB's
