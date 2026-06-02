@@ -18,7 +18,6 @@ public:
 	static void Reset();
 
 protected:
-	void OnInit(duckdb::DBConfig &config) override;
 	void OnPostInit(duckdb::ClientContext &context) override;
 
 private:

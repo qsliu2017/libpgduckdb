@@ -50,6 +50,7 @@
 
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/database.hpp"
+#include "duckdb/main/extension.hpp"
 #include "duckdb/storage/storage_extension.hpp"
 #include "duckdb/transaction/transaction_context.hpp"
 #include "ducklake_extension.hpp"
@@ -131,10 +132,19 @@ namespace pgducklake {
 void ResetDirectInsertCaches();
 } // namespace pgducklake
 
+class PostgresScannerExtension : public duckdb::Extension {
+public:
+  std::string Name() override {
+    return "postgres_scanner";
+  }
+  void Load(duckdb::ExtensionLoader &loader) override;
+};
+
 void ducklake_load_extension(duckdb::DuckDB &db) {
   ducklake_duckdb_instance = &db;
   pgducklake::ResetDirectInsertCaches();
   db.LoadStaticExtension<duckdb::DucklakeExtension>();
+  db.LoadStaticExtension<PostgresScannerExtension>();
   pgducklake::RegisterTimeTravelFunction(*db.instance);
   pgducklake::RegisterWrapperMacros(*db.instance);
   pgducklake::RegisterScalarMacros(*db.instance);
@@ -157,18 +167,6 @@ void ducklake_load_extension(duckdb::DuckDB &db) {
 // contract shim no-ops that registration; this subclass drives the same
 // steps in process instead.
 namespace pgducklake {
-
-void
-DuckDBManager::OnInit(duckdb::DBConfig &config) {
-	// DuckLake's FDW path attaches a remote DuckLake via "ducklake:..."
-	// URIs, which pull in the postgres_scanner DuckDB extension at
-	// runtime. The system-installed postgres_scanner.duckdb_extension
-	// has no Anthropic-signed signature in the test environment, so
-	// DuckDB refuses to load it under the default policy. Allow
-	// unsigned extensions so the FDW tests can attach upstream
-	// postgres-backed DuckLake catalogs.
-	config.SetOptionByName("allow_unsigned_extensions", duckdb::Value::BOOLEAN(true));
-}
 
 void
 DuckDBManager::OnPostInit(duckdb::ClientContext &context) {
