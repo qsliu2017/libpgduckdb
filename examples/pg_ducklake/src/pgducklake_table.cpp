@@ -13,7 +13,6 @@
 
 #include "pgducklake/pgducklake_defs.hpp"
 #include "pgducklake/pgducklake_duckdb.hpp"
-#include "pgducklake/pgducklake_duckdb_query.hpp"
 #include "pgducklake/pgducklake_guc.hpp"
 #include "pgducklake/pgducklake_sync.hpp"
 
@@ -595,10 +594,6 @@ DECLARE_PG_FUNCTION(ducklake_create_table_trigger) {
 
   AtEOXact_GUC(false, save_nestlevel);
   SPI_finish();
-
-  // Sync ducklake.default_table_path GUC to DuckDB extension option so
-  // DuckLake's CreateTable uses the custom path for data files.
-  pgducklake::SyncDefaultTablePathToDuckDB();
 
   // Generate CREATE TABLE DDL for DuckDB
   std::string create_table_ddl(pgddb_get_tabledef(relid));

@@ -38,6 +38,7 @@
 #include "pgducklake/pgducklake_defs.hpp"
 #include "pgducklake/pgducklake_duckdb.hpp"
 #include "pgducklake/pgducklake_functions.hpp"
+#include "pgducklake/pgducklake_guc.hpp"
 #include "pgducklake/pgducklake_time_travel.hpp"
 
 #include "pgddb/catalog/pgddb_storage.hpp"
@@ -47,6 +48,7 @@
 #include "duckdb/main/client_context.hpp"
 #include "duckdb/main/database.hpp"
 #include "duckdb/main/extension.hpp"
+#include "duckdb/parser/keyword_helper.hpp"
 #include "duckdb/storage/storage_extension.hpp"
 #include "duckdb/transaction/transaction_context.hpp"
 #include "ducklake_extension.hpp"
@@ -66,6 +68,7 @@ extern "C" {
 #include "catalog/namespace.h"
 #include "catalog/pg_type.h"
 #include "commands/extension.h"
+#include "fmgr.h"
 #include "miscadmin.h"
 #include "utils/builtins.h"
 #include "utils/elog.h"
@@ -159,6 +162,24 @@ DuckDBManager::OnPostInit(duckdb::ClientContext &context) {
 	 */
 	QueryOrThrow(context,
 	                   "ATTACH DATABASE '" PGDUCKLAKE_PG_STORAGE_CATALOG "' (TYPE " PGDUCKLAKE_PG_STORAGE_CATALOG ")");
+}
+
+void
+DuckDBManager::RefreshConnectionState(duckdb::ClientContext &context) {
+	// Push the ducklake.default_table_path GUC to DuckDB so DuckLake's
+	// CreateTable writes data files under the custom path. Runs on every
+	// GetConnection (right before the next statement), so a runtime
+	// SET ducklake.default_table_path is observed by the following CREATE
+	// TABLE. Uses the (context, query) overload to avoid recursing back into
+	// GetConnection.
+	if (default_table_path && default_table_path[0] != '\0') {
+		try {
+			DuckDBQueryOrThrow(context, "SET ducklake_default_table_path = " +
+			                                duckdb::KeywordHelper::WriteQuoted(std::string(default_table_path)));
+		} catch (const std::exception &e) {
+			elog(WARNING, "failed to sync ducklake.default_table_path to DuckDB: %s", DuckDBErrorMessage(e).c_str());
+		}
+	}
 }
 
 } // namespace pgducklake
@@ -412,3 +433,43 @@ DuckDBErrorMessage(const std::exception &e) {
 }
 
 } // namespace pgducklake
+
+/*
+ * DuckDB-related SQL admin UDFs (exposed in the ducklake schema). Mirror
+ * pg_duckdb's duckdb.recycle_ddb / duckdb.raw_query.
+ *
+ *   ducklake.recycle_ddb()           -- tear down + recreate DuckDBManager
+ *   ducklake.duckdb_raw_query(text)  -- run an arbitrary string on DuckDB
+ *
+ * ducklake.duckdb_query(text) is a duckdb_only_function SQL stub routed by
+ * the planner (DucklakeFunctionName rewrites it to DuckDB's query() table
+ * function); it has no C entry point here.
+ */
+extern "C" {
+
+PG_FUNCTION_INFO_V1(ducklake_recycle_ddb);
+Datum
+ducklake_recycle_ddb(PG_FUNCTION_ARGS) {
+	// Recycling tears down a DuckDB instance that may have an open
+	// transaction tied to the current PG transaction. Match pg_duckdb's
+	// guard.
+	::pgddb::pg::PreventInTransactionBlock(true, "ducklake.recycle_ddb()");
+	pgducklake::DuckDBManager::Reset();
+	PG_RETURN_VOID();
+}
+
+PG_FUNCTION_INFO_V1(ducklake_duckdb_raw_query);
+Datum
+ducklake_duckdb_raw_query(PG_FUNCTION_ARGS) {
+	if (PG_ARGISNULL(0))
+		ereport(ERROR, (errcode(ERRCODE_NULL_VALUE_NOT_ALLOWED), errmsg("query must not be NULL")));
+	const char *query = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	try {
+		pgducklake::DuckDBQueryOrThrow(query);
+	} catch (const std::exception &e) {
+		ereport(ERROR, (errcode(ERRCODE_INTERNAL_ERROR), errmsg("%s", pgducklake::DuckDBErrorMessage(e).c_str())));
+	}
+	PG_RETURN_VOID();
+}
+
+} // extern "C"

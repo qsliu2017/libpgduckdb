@@ -22,6 +22,10 @@ public:
 
 protected:
 	void OnPostInit(duckdb::ClientContext &context) override;
+	// Syncs the ducklake.default_table_path GUC to DuckDB before each statement
+	// (runs per GetConnection), so a runtime SET is picked up by the next
+	// CREATE TABLE. OnPostInit runs only once per instance and would miss it.
+	void RefreshConnectionState(duckdb::ClientContext &context) override;
 
 private:
 	static duckdb::unique_ptr<DuckDBManager> instance_;
