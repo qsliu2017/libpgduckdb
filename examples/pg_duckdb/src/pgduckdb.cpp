@@ -48,7 +48,7 @@ _PG_init(void) {
 		return pgduckdb::IsExtensionRegistered() ? pgduckdb::DuckdbUnresolvedTypeOid() : InvalidOid;
 	};
 	DuckdbInitHooks();
-	pgddb::InitNode();
+	pgddb::InitNode("DuckDBScan");
 	pgduckdb::InitBackgroundWorkersShmem();
 	pgduckdb::RegisterDuckdbXactCallback();
 }
