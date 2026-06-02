@@ -11,7 +11,7 @@
  *     ducklake_initialize()          -- SQL script entry point
  *       -> DuckDBQueryOrThrow("SELECT 1")
  *           -> DuckDBManager::Initialize()
- *               -> ducklake_load_extension()   [callback from pg_duckdb]
+ *               -> DuckDBManager::OnPostInit()
  *                   -> LoadStaticExtension
  *                   -> ducklake_attach_catalog()
  *
@@ -29,13 +29,10 @@
  *       -> DuckDBManager::Reset()               [destroys DuckDB instance]
  *     next query
  *       -> DuckDBManager::Initialize()
- *           -> ducklake_load_extension()         [callback from pg_duckdb]
+ *           -> DuckDBManager::OnPostInit()
  *               -> LoadStaticExtension
  *               -> ducklake_attach_catalog()
  *     (metadata manager already registered in _PG_init, no re-registration)
- *
- * Query execution against DuckDB is handled via pg_duckdb's raw_query() UDF
- * through PostgreSQL's SPI in the PostgreSQL-facing translation units.
  */
 
 #include "pgducklake/pgducklake_defs.hpp"
@@ -130,19 +127,12 @@ public:
   void Load(duckdb::ExtensionLoader &loader) override;
 };
 
-void ducklake_load_extension(duckdb::DuckDB &db) {
-}
-
-// libpgddb manager binding. Subclasses pgddb::DuckDBManager so the first
-// DuckDBQueryOrThrow() in a backend brings up DuckDB with pg_ducklake's
-// PostgresStorageExtension registered under "pgducklake" (DuckLake's
-// ATTACH connection string asks for it) and ducklake_load_extension()
-// invoked to load the static extension and attach the catalog.
-//
-// In upstream pg_ducklake this work fires from a callback pg_duckdb's own
-// DuckDBManager invokes via RegisterDuckdbLoadExtension. The Phase 0
-// contract shim no-ops that registration; this subclass drives the same
-// steps in process instead.
+// libpgddb manager binding. Subclasses pgddb::DuckDBManager and overrides
+// OnPostInit so the first DuckDBQueryOrThrow() in a backend brings up DuckDB
+// with pg_ducklake's PostgresStorageExtension registered under "pgducklake"
+// (DuckLake's ATTACH connection string asks for it), loads the DuckLake +
+// postgres_scanner static extensions, registers the wrapper macros, and
+// attaches the catalog -- all in process, no registered callback.
 namespace pgducklake {
 
 void

@@ -10,7 +10,7 @@
 #include <duckdb/common/error_data.hpp> /* must precede postgres.h (FATAL macro) */
 
 #include "pgducklake/pgducklake_table.hpp"
-#include "pgducklake/utility/cpp_wrapper.hpp"
+#include "pgddb/utility/cpp_wrapper.hpp"
 
 #include <string>
 

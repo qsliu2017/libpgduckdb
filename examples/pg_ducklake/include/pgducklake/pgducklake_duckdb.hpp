@@ -56,20 +56,13 @@ std::string DuckDBErrorMessage(const std::exception &e);
 
 } // namespace pgducklake
 
-/*
- * Callback invoked by pg_duckdb during DuckDBManager::Initialize().
- * Receives a reference to the DuckDB instance and loads
- * the DuckLake static extension into it.
- */
-void ducklake_load_extension(duckdb::DuckDB &db);
-
 /* Detach the "pgducklake" DuckLake catalog.  Called by the utility hook
  * after DROP EXTENSION so that a subsequent CREATE EXTENSION can
  * attach a fresh catalog. */
 void ducklake_detach_catalog();
 
 /* Attach the "pgducklake" DuckLake catalog.  Called during initial
- * extension load (ducklake_load_extension) and on re-create
+ * extension load (DuckDBManager::OnPostInit) and on re-create
  * (ducklake_initialize). */
 void ducklake_attach_catalog();
 

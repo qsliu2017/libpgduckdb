@@ -35,7 +35,7 @@
 #include "pgddb/pgddb_types.hpp"
 #include "pgducklake/pgducklake_duckdb.hpp"
 #include "pgducklake/pgducklake_fdw.hpp"
-#include "pgducklake/utility/cpp_wrapper.hpp"
+#include "pgddb/utility/cpp_wrapper.hpp"
 
 extern "C" {
 #include "postgres.h"
