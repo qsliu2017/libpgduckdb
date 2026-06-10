@@ -1,8 +1,8 @@
 # Makefile for regression test
 
-ROOT_DIR = ../..
+ROOT_DIR = ../../..
 
-include $(ROOT_DIR)/Makefile.global
+include $(ROOT_DIR)/Makefile.pgxs
 
 # Make sure foreign_data_wrapper tests fail as expected
 unexport MOTHERDUCK_TOKEN

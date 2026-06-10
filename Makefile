@@ -1,4 +1,5 @@
-# Root Makefile. Three roles:
+# Root Makefile. Three roles (plus Makefile.pgxs, the shared PGXS include
+# consumers pull in after setting their PGXS variables):
 #
 # 1. Delegating: `make <consumer>/<target>` forwards to
 #    <consumer>/Makefile via $(MAKE) -C. Consumers live at pg_duckdb/,

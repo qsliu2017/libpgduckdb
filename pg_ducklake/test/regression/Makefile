@@ -1,8 +1,8 @@
 # Makefile for regression test
 
-ROOT_DIR = ../..
+ROOT_DIR = ../../..
 
-include $(ROOT_DIR)/Makefile.global
+include $(ROOT_DIR)/Makefile.pgxs
 
 TESTDATA_DIR = /tmp/pg_ducklake_testdata
 

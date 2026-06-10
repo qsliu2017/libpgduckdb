@@ -82,10 +82,7 @@ SHLIB_LINK += $(PG_DUCKLAKE_LINK_FLAGS)
 # `make clean` drops the patch stamp so the next build re-applies onto a fresh submodule reset.
 EXTRA_CLEAN += $(DUCKLAKE_STAMP)
 
-PG_CONFIG ?= pg_config
-PGXS := $(shell $(PG_CONFIG) --pgxs)
-INCLUDEDIR_SERVER := $(shell $(PG_CONFIG) --includedir-server)
-include $(PGXS)
+include $(ROOT_DIR)/Makefile.pgxs
 
 # Init the ducklake submodule non-recursively: its inner duckdb / extension-ci-tools
 # submodules are only for ducklake's own CI; the SOURCE_DIR extension build uses src/ only.

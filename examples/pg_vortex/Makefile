@@ -49,11 +49,7 @@ SHLIB_LINK += $(PG_VORTEX_LINK_FLAGS)
 REGRESS = basic
 REGRESS_OPTS = --temp-instance=./tmp_check --temp-config=$(CURDIR)/regression.conf
 
-PG_CONFIG ?= pg_config
-PGXS := $(shell $(PG_CONFIG) --pgxs)
-PG_LIB := $(shell $(PG_CONFIG) --pkglibdir)
-INCLUDEDIR_SERVER := $(shell $(PG_CONFIG) --includedir-server)
-include $(PGXS)
+include $(ROOT_DIR)/Makefile.pgxs
 
 # Consumer .o files depend on the duckdb submodule HEAD marker (defined in
 # the root Makefile) so first-time builds init the submodule before

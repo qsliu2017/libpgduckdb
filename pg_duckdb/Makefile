@@ -68,7 +68,7 @@ override PG_CFLAGS += -Wno-declaration-after-statement
 
 SHLIB_LINK += $(PG_DUCKDB_LINK_FLAGS)
 
-include Makefile.global
+include $(ROOT_DIR)/Makefile.pgxs
 
 # Only pass the version define to the one file that needs it, so that ccache
 # doesn't invalidate everything on every commit.

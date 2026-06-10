@@ -1,8 +1,8 @@
 # Makefile for isolation tests
 
-ROOT_DIR = ../..
+ROOT_DIR = ../../..
 
-include $(ROOT_DIR)/Makefile.global
+include $(ROOT_DIR)/Makefile.pgxs
 
 check-isolation:
 	TEST_DIR=$(CURDIR) $(pg_isolation_regress_installcheck) \
