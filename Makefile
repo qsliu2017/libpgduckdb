@@ -1,7 +1,8 @@
 # Root Makefile. Three roles:
 #
-# 1. Delegating: `make examples/<name>/<target>` forwards to
-#    examples/<name>/Makefile via $(MAKE) -C.
+# 1. Delegating: `make <consumer>/<target>` forwards to
+#    <consumer>/Makefile via $(MAKE) -C. Consumers live at pg_duckdb/,
+#    pg_ducklake/, and examples/pg_vortex/.
 # 2. libpgddb source list: extension Makefiles `include` this file to pull
 #    in PGDDB_INCLUDE / PGDDB_OBJS / PGDDB_DUCKDB_INCLUDE. They append
 #    PGDDB_OBJS to OBJS so the libpgddb sources get bundled into their dylib.
@@ -123,6 +124,6 @@ $(FULL_DUCKDB_LIB): $(PGDDB_DIR)/.git/modules/third_party/duckdb/HEAD $(EXTENSIO
 clean-duckdb:
 	rm -rf $(PGDDB_DIR)/duckdb/build
 
-# Delegate make examples/<name>/<target> to examples/<name>/Makefile.
-examples/%:
+# Delegate make <consumer>/<target> to <consumer>/Makefile.
+pg_duckdb/% pg_ducklake/% examples/%:
 	$(MAKE) -C $(@D) $(@F)

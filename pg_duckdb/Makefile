@@ -1,7 +1,7 @@
 .PHONY: clean-all lintcheck check-regression-duckdb clean-regression
 
 # Pull in libpgddb sources + duckdb-build wiring from the repo root.
-ROOT_DIR := $(abspath $(CURDIR)/../..)
+ROOT_DIR := $(abspath $(CURDIR)/..)
 # Consumers must set EXTENSION_CONFIGS BEFORE including the root Makefile so
 # the $(FULL_DUCKDB_LIB) rule sees the right prereq.
 EXTENSION_CONFIGS := $(CURDIR)/third_party/pg_duckdb_extensions.cmake

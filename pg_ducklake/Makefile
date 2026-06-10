@@ -1,4 +1,4 @@
-ROOT_DIR := $(abspath $(CURDIR)/../..)
+ROOT_DIR := $(abspath $(CURDIR)/..)
 EXTENSION_CONFIGS := $(CURDIR)/pg_ducklake_extensions.cmake
 EXTENSION_BUNDLE_EXCLUDE := ducklake postgres_scanner
 include $(ROOT_DIR)/Makefile
@@ -12,7 +12,7 @@ OBJS = $(SRCS:.cpp=.o)
 C_SRCS = $(wildcard src/*.c src/*/*.c)
 OBJS += $(C_SRCS:.c=.o)
 
-# libpgddb objects compiled in-place at $(ROOT_DIR)/src/.
+# libpgddb objects compiled in-place at $(ROOT_DIR)/libpgduckdb/.
 OBJS += $(PGDDB_OBJS)
 
 # Vendored ducklake: pristine community submodule + ordered customization patches.
@@ -22,6 +22,9 @@ OBJS += $(PGDDB_OBJS)
 DUCKLAKE_DIR := $(CURDIR)/third_party/ducklake
 DUCKLAKE_PATCHES := $(sort $(wildcard $(CURDIR)/third_party/ducklake-*.patch))
 DUCKLAKE_STAMP := $(DUCKLAKE_DIR)/.patched
+# NB: the submodule *name* (and thus its .git/modules/ gitdir) is still
+# "examples/pg_ducklake/third_party/ducklake" from before pg_ducklake moved
+# out of examples/; renaming it would break existing clones.
 DUCKLAKE_SUBMODULE_HEAD := $(ROOT_DIR)/.git/modules/examples/pg_ducklake/third_party/ducklake/HEAD
 DUCKLAKE_INCLUDE = -I$(DUCKLAKE_DIR)/src/include
 
@@ -87,7 +90,7 @@ include $(PGXS)
 # Init the ducklake submodule non-recursively: its inner duckdb / extension-ci-tools
 # submodules are only for ducklake's own CI; the SOURCE_DIR extension build uses src/ only.
 $(DUCKLAKE_SUBMODULE_HEAD):
-	git -C $(ROOT_DIR) submodule update --init examples/pg_ducklake/third_party/ducklake
+	git -C $(ROOT_DIR) submodule update --init pg_ducklake/third_party/ducklake
 
 # Apply our customization patches onto the pristine ducklake submodule (apply-once,
 # stamp-guarded). Reset to the pinned commit first so editing a patch and rebuilding
