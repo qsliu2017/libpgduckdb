@@ -39,7 +39,7 @@ POSTGRES_SCANNER_EXT_LIB := $(DUCKDB_BUILD_DIR)/extension/postgres_scanner/libpo
 # passed into the duckdb configure with the vendored ducklake dir as the manifest
 # dir, so vcpkg builds roaring during configure. These are the same variables
 # duckdb's own Makefile wires for VCPKG builds ("Enable VCPKG for this build" in
-# third_party/duckdb/Makefile). Appending after the root include is safe: the
+# duckdb/Makefile). Appending after the root include is safe: the
 # variable is only expanded in the duckdb configure recipe. Without a toolchain
 # (local macOS dev) find_package falls back to a system croaring (homebrew).
 ifneq ($(VCPKG_TOOLCHAIN_PATH),)

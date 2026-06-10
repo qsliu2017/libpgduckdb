@@ -14,8 +14,8 @@
 
 PGDDB_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 PGDDB_INCLUDE := -I$(PGDDB_DIR)/include
-PGDDB_DUCKDB_INCLUDE := -isystem $(PGDDB_DIR)/third_party/duckdb/src/include \
-                        -isystem $(PGDDB_DIR)/third_party/duckdb/third_party/re2
+PGDDB_DUCKDB_INCLUDE := -isystem $(PGDDB_DIR)/duckdb/src/include \
+                        -isystem $(PGDDB_DIR)/duckdb/third_party/re2
 PGDDB_CPP_SRCS := $(wildcard $(PGDDB_DIR)/src/*.cpp $(PGDDB_DIR)/src/*/*.cpp)
 PGDDB_C_SRCS := $(wildcard $(PGDDB_DIR)/src/*.c $(PGDDB_DIR)/src/*/*.c)
 PGDDB_SRCS := $(PGDDB_CPP_SRCS) $(PGDDB_C_SRCS)
@@ -58,7 +58,7 @@ endif
 # happen to share a basename can still coexist, and re-pointing a
 # consumer at a different config naturally lands in a new dir.
 DUCKDB_CONSUMER_TAG := $(if $(EXTENSION_CONFIGS),$(basename $(notdir $(EXTENSION_CONFIGS)))-$(shell shasum -a 256 '$(EXTENSION_CONFIGS)' 2>/dev/null | cut -c1-8),default)
-DUCKDB_BUILD_DIR := $(PGDDB_DIR)/third_party/duckdb/build/$(DUCKDB_BUILD_TYPE)-$(DUCKDB_CONSUMER_TAG)
+DUCKDB_BUILD_DIR := $(PGDDB_DIR)/duckdb/build/$(DUCKDB_BUILD_TYPE)-$(DUCKDB_CONSUMER_TAG)
 FULL_DUCKDB_LIB = $(DUCKDB_BUILD_DIR)/libduckdb_bundle.a
 
 # Consumer-provided absolute path to its *_extensions.cmake. Empty = no
@@ -69,12 +69,15 @@ EXTENSION_CONFIGS ?=
 
 duckdb: $(FULL_DUCKDB_LIB)
 
+# NB: the submodule *name* (and thus its .git/modules/ gitdir) is still
+# "third_party/duckdb" from before the duckdb/ worktree-path move; renaming
+# it would break existing clones.
 $(PGDDB_DIR)/.git/modules/third_party/duckdb/HEAD:
 	git -C $(PGDDB_DIR) submodule update --init --recursive
 
 $(FULL_DUCKDB_LIB): $(PGDDB_DIR)/.git/modules/third_party/duckdb/HEAD $(EXTENSION_CONFIGS)
 	mkdir -p $(DUCKDB_BUILD_DIR)/vcpkg_installed
-	cmake -S $(PGDDB_DIR)/third_party/duckdb -B $(DUCKDB_BUILD_DIR) \
+	cmake -S $(PGDDB_DIR)/duckdb -B $(DUCKDB_BUILD_DIR) \
 		$(DUCKDB_CMAKE_GENERATOR) $(DUCKDB_CMAKE_FORCE_COLOR) \
 		-DENABLE_SANITIZER=FALSE -DENABLE_UBSAN=0 \
 		$(DUCKDB_CMAKE_VARS) $(DUCKDB_EXTRA_CMAKE_VARS) \
@@ -85,7 +88,7 @@ $(FULL_DUCKDB_LIB): $(PGDDB_DIR)/.git/modules/third_party/duckdb/HEAD $(EXTENSIO
 		-DCMAKE_BUILD_TYPE=$(DUCKDB_CMAKE_BUILD_TYPE)
 	cmake --build $(DUCKDB_BUILD_DIR) --config $(DUCKDB_CMAKE_BUILD_TYPE)
 	@# Inline of duckdb's bundle-setup + bundle-library-o targets (see
-	@# third_party/duckdb/Makefile `bundle-setup` / `bundle-library-o` /
+	@# duckdb/Makefile `bundle-setup` / `bundle-library-o` /
 	@# `bundle-library`). Future duckdb-submodule bumps should diff
 	@# against those targets to catch divergence.
 	@#
@@ -118,7 +121,7 @@ $(FULL_DUCKDB_LIB): $(PGDDB_DIR)/.git/modules/third_party/duckdb/HEAD $(EXTENSIO
 	cd $(DUCKDB_BUILD_DIR)/bundle && echo ./*/*.o | xargs $(AR) cr ../libduckdb_bundle.a
 
 clean-duckdb:
-	rm -rf $(PGDDB_DIR)/third_party/duckdb/build
+	rm -rf $(PGDDB_DIR)/duckdb/build
 
 # Delegate make examples/<name>/<target> to examples/<name>/Makefile.
 examples/%:
