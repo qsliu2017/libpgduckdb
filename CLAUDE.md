@@ -9,7 +9,7 @@ clobbers DuckDB's `ExceptionType::FATAL`, so DuckDB headers must precede
 
 - `#pragma once` on the first line; a brief header comment only if needed.
 - No `postgres.h` in headers -- get PG structs from
-  `include/pgddb/pg/declarations.hpp` (add forward decls there). Exception:
+  `libpgduckdb/include/pgddb/pg/declarations.hpp` (add forward decls there). Exception:
   a PG type that can't be forward-declared (e.g. plain enums).
 - Don't declare what `PG_FUNCTION_INFO_V1` already declares.
 

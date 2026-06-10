@@ -12,7 +12,7 @@ OBJS = $(SRCS:.cpp=.o)
 C_SRCS = $(wildcard src/*.c src/*/*.c)
 OBJS += $(C_SRCS:.c=.o)
 
-# libpgddb objects compiled in-place at $(ROOT_DIR)/src/.
+# libpgddb objects compiled in-place at $(ROOT_DIR)/libpgduckdb/.
 OBJS += $(PGDDB_OBJS)
 
 # -lssl -lcrypto and --exclude-libs,ALL: see pg_duckdb's Makefile.

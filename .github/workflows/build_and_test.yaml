@@ -22,7 +22,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
       - name: Check formatting (libpgddb core + pg_ducklake, excludes vendor/)
         run: |
-          find src include examples/pg_ducklake/src examples/pg_ducklake/include \
+          find libpgduckdb examples/pg_ducklake/src examples/pg_ducklake/include \
             \( -name '*.cpp' -o -name '*.hpp' -o -name '*.h' \) -not -path '*/vendor/*' -print0 \
             | xargs -0 uvx clang-format@22.1.5 --dry-run -Werror
 

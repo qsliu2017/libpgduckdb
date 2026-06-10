@@ -19,7 +19,7 @@ OBJS = $(subst .cpp,.o, $(SRCS))
 C_SRCS = $(wildcard src/*.c src/*/*.c)
 OBJS += $(subst .c,.o, $(C_SRCS))
 
-# libpgddb objects, compiled in-place at $(ROOT_DIR)/src/.
+# libpgddb objects, compiled in-place at $(ROOT_DIR)/libpgduckdb/.
 OBJS += $(PGDDB_OBJS)
 
 # -lssl -lcrypto: the bundle's vendored httplib (in duckdb-httpfs) refs
