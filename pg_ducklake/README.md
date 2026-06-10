@@ -130,7 +130,7 @@ See [docs/](docs/README.md) for full documentation including SQL reference, sett
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for how to get involved.
+We welcome contributions! Please see [CONTRIBUTING.md](../CONTRIBUTING.md) for how to get involved.
 
 ## Acknowledgments
 
