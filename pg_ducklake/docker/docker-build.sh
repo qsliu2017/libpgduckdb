@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
+# Local build of the pg_ducklake image. The bake file sets the build context
+# to the repo root, so this script works from any CWD.
 set -euo pipefail
+
+BAKE_FILE="$(cd "$(dirname "$0")" && pwd)/docker-bake.hcl"
 
 POSTGRES_VERSION="${POSTGRES_VERSION:-18}"
 REPO="${REPO:-pgducklake/pgducklake}"
@@ -23,7 +27,7 @@ else
 fi
 
 exec docker buildx bake \
-  --file docker-bake.hcl \
+  --file "${BAKE_FILE}" \
   "${TARGET}" \
   --set "*.args.POSTGRES_VERSION=${POSTGRES_VERSION}" \
   --set "*.tags=${REPO}:${POSTGRES_VERSION}-local" \

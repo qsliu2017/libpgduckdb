@@ -1,4 +1,4 @@
-name: Build Docker
+name: pg_ducklake Docker
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
@@ -14,8 +14,7 @@ on:
     tags: ["v*"]
   pull_request:
     paths:
-      - Dockerfile
-      - docker-bake.hcl
+      - "pg_ducklake/docker/**"
       - ".github/workflows/docker.yaml"
   schedule:
     - cron: "44 4 * * *"
@@ -62,10 +61,10 @@ jobs:
           username: pgducklake
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Checkout pg_ducklake extension code
+      - name: Checkout repo
         uses: actions/checkout@v4
         with:
-          submodules: true  # duckdb submodule only; pg_duckdb and ducklake are subtrees
+          submodules: true  # duckdb (repo root) + pg_ducklake/third_party/ducklake
 
       - name: Compute job parameters
         id: params
@@ -110,6 +109,7 @@ jobs:
       - name: docker bake (full)
         uses: docker/bake-action@v5
         with:
+          files: pg_ducklake/docker/docker-bake.hcl
           targets: pg_ducklake_${{ matrix.postgres }}
           push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
           set: |
@@ -123,6 +123,7 @@ jobs:
       - name: docker bake (slim)
         uses: docker/bake-action@v5
         with:
+          files: pg_ducklake/docker/docker-bake.hcl
           targets: pg_ducklake_${{ matrix.postgres }}_slim
           push: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
           set: |
@@ -243,19 +244,19 @@ jobs:
         env:
           BENCH_MODE: heap
         run: |
-          uv run test/benchmark/data-inlining/bench_pg_ducklake.py \
+          uv run pg_ducklake/test/benchmark/data-inlining/bench_pg_ducklake.py \
             > results_pg_heap.json
 
       - name: Run pg_ducklake benchmark
         run: |
-          uv run test/benchmark/data-inlining/bench_pg_ducklake.py \
+          uv run pg_ducklake/test/benchmark/data-inlining/bench_pg_ducklake.py \
             > results_pg_ducklake.json
 
       - name: Run DuckDB + DuckLake benchmark
         env:
           BENCH_PG_CATALOG_CONNSTR: "dbname=postgres host=localhost port=5433 user=postgres password=duckdb"
         run: |
-          uv run test/benchmark/data-inlining/bench_duckdb_ducklake.py \
+          uv run pg_ducklake/test/benchmark/data-inlining/bench_duckdb_ducklake.py \
             > results_duckdb_ducklake.json
 
       - name: Compare results

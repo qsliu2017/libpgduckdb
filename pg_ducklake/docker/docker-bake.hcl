@@ -16,6 +16,11 @@ target "shared" {
 target "postgres" {
   inherits = ["shared"]
 
+  # The extension build pulls the libpgddb kernel and the duckdb submodule
+  # from the repo root, so the context is the root (relative to this file).
+  context    = "../.."
+  dockerfile = "pg_ducklake/docker/Dockerfile"
+
   contexts = {
     postgres_base = "docker-image://postgres:${POSTGRES_VERSION}-bookworm"
   }

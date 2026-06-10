@@ -1,0 +1,29 @@
+# BuildKit per-Dockerfile ignore for pg_ducklake/docker/Dockerfile,
+# applied against the build context = the REPO ROOT (docker-bake.hcl).
+.git
+# Submodule init-stamp sentinel for the duckdb submodule (name-keyed path).
+!.git/modules/third_party/duckdb/HEAD
+# The ducklake submodule's full gitdir: the in-image build runs the
+# patch-stamp rule (git checkout/clean/apply) against it.
+!.git/modules/examples/pg_ducklake/third_party/ducklake
+
+# Not needed in the image: the other extensions and local installs/tools.
+pg_duckdb
+examples
+pg-*
+duckdb/.git
+.venv
+.bear
+.cache
+.claude
+.vscode
+compile_commands.json
+
+# Build artifacts.
+*.o
+*.so
+*.dylib
+*.bc
+**/.deps
+duckdb/build
+pg_ducklake/third_party/ducklake/build
