@@ -44,14 +44,14 @@ USER postgres
 ### duckdb bundle layer -- heavy; only invalidated by the build wiring, the
 ### duckdb submodule, or the vendored ducklake inputs.
 COPY --chown=postgres:postgres Makefile Makefile.pgxs ./
-# Satisfy the duckdb submodule init-stamp (name-keyed path) so make skips
-# `git submodule update`; the duckdb source itself is COPY'd in directly.
-COPY --chown=postgres:postgres .git/modules/third_party/duckdb/HEAD .git/modules/third_party/duckdb/HEAD
+# Satisfy the duckdb submodule init-stamp so make skips `git submodule
+# update`; the duckdb source itself is COPY'd in directly.
+COPY --chown=postgres:postgres .git/modules/duckdb/HEAD .git/modules/duckdb/HEAD
 COPY --chown=postgres:postgres duckdb duckdb
 # The ducklake submodule ships WITH its gitdir (whitelisted in
 # Dockerfile.dockerignore) at the same relative layout, so the Makefile's
 # patch-stamp rule (git checkout/clean/apply) works inside the build.
-COPY --chown=postgres:postgres .git/modules/examples/pg_ducklake/third_party/ducklake .git/modules/examples/pg_ducklake/third_party/ducklake
+COPY --chown=postgres:postgres .git/modules/pg_ducklake/third_party/ducklake .git/modules/pg_ducklake/third_party/ducklake
 COPY --chown=postgres:postgres pg_ducklake/Makefile pg_ducklake/pg_ducklake_extensions.cmake pg_ducklake/
 COPY --chown=postgres:postgres pg_ducklake/third_party pg_ducklake/third_party
 

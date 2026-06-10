@@ -22,9 +22,7 @@ OBJS += $(PGDDB_OBJS)
 DUCKLAKE_DIR := $(CURDIR)/third_party/ducklake
 DUCKLAKE_PATCHES := $(sort $(wildcard $(CURDIR)/third_party/ducklake-*.patch))
 DUCKLAKE_STAMP := $(DUCKLAKE_DIR)/.patched
-# NB: the submodule *name* (gitdir under .git/modules/) is still
-# "examples/pg_ducklake/third_party/ducklake"; renaming it would break clones.
-DUCKLAKE_SUBMODULE_HEAD := $(ROOT_DIR)/.git/modules/examples/pg_ducklake/third_party/ducklake/HEAD
+DUCKLAKE_SUBMODULE_HEAD := $(ROOT_DIR)/.git/modules/pg_ducklake/third_party/ducklake/HEAD
 DUCKLAKE_INCLUDE = -I$(DUCKLAKE_DIR)/src/include
 
 override PG_CPPFLAGS += -Iinclude $(PGDDB_INCLUDE) $(PGDDB_DUCKDB_INCLUDE) $(DUCKLAKE_INCLUDE) -isystem $(INCLUDEDIR_SERVER)
@@ -104,7 +102,7 @@ $(DUCKLAKE_STAMP): $(DUCKLAKE_PATCHES) $(DUCKLAKE_SUBMODULE_HEAD)
 # Extension .o files include patched ducklake headers and the duckdb build configures
 # ducklake via SOURCE_DIR, so both must see the patched source: gate them on the stamp
 # (which transitively inits the submodule) and on the duckdb submodule HEAD marker.
-$(OBJS): $(PGDDB_DIR)/.git/modules/third_party/duckdb/HEAD $(DUCKLAKE_STAMP)
+$(OBJS): $(PGDDB_DIR)/.git/modules/duckdb/HEAD $(DUCKLAKE_STAMP)
 $(FULL_DUCKDB_LIB): $(DUCKLAKE_STAMP)
 
 # The ducklake / postgres_scanner extension archives are produced as a side effect of the duckdb

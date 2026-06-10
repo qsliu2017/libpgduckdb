@@ -71,12 +71,10 @@ EXTENSION_CONFIGS ?=
 
 duckdb: $(FULL_DUCKDB_LIB)
 
-# NB: the submodule *name* (gitdir under .git/modules/) is still
-# "third_party/duckdb"; renaming it would break existing clones.
-$(PGDDB_DIR)/.git/modules/third_party/duckdb/HEAD:
+$(PGDDB_DIR)/.git/modules/duckdb/HEAD:
 	git -C $(PGDDB_DIR) submodule update --init --recursive
 
-$(FULL_DUCKDB_LIB): $(PGDDB_DIR)/.git/modules/third_party/duckdb/HEAD $(EXTENSION_CONFIGS)
+$(FULL_DUCKDB_LIB): $(PGDDB_DIR)/.git/modules/duckdb/HEAD $(EXTENSION_CONFIGS)
 	mkdir -p $(DUCKDB_BUILD_DIR)/vcpkg_installed
 	cmake -S $(PGDDB_DIR)/duckdb -B $(DUCKDB_BUILD_DIR) \
 		$(DUCKDB_CMAKE_GENERATOR) $(DUCKDB_CMAKE_FORCE_COLOR) \

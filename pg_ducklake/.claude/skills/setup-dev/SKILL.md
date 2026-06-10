@@ -142,9 +142,8 @@ grep -qF 'pg-*/' "$exclude_file" 2>/dev/null || echo 'pg-*/' >> "$exclude_file"
 
 pg_ducklake lives in the libpgduckdb monorepo: the libpgddb kernel is
 plain in-repo source at `libpgduckdb/` (repo root) -- nothing to
-initialize. The DuckDB source is a submodule at
-the repo root, path `duckdb/` (the submodule *name* is still
-"third_party/duckdb" for .git/modules compatibility). Initialize it:
+initialize. The DuckDB source is a submodule at the repo root,
+`duckdb/`. Initialize it:
 
 ```bash
 git -C "$(git rev-parse --show-toplevel)" submodule update --init --depth=1 duckdb

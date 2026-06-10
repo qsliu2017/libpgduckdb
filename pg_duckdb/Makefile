@@ -77,7 +77,7 @@ src/pgduckdb.o: PG_CPPFLAGS += -DPG_DUCKDB_VERSION="\"$(PG_DUCKDB_VERSION)\""
 # We need the DuckDB header files to build our own .o files. Depend on the
 # submodule HEAD marker (defined in the root Makefile) so first-time builds
 # init the submodule before compiling extension .o files.
-$(OBJS): $(PGDDB_DIR)/.git/modules/third_party/duckdb/HEAD
+$(OBJS): $(PGDDB_DIR)/.git/modules/duckdb/HEAD
 
 COMPILE.cc.bc += $(PG_CPPFLAGS)
 COMPILE.cxx.bc += $(PG_CXXFLAGS)

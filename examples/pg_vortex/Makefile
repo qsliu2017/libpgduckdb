@@ -54,7 +54,7 @@ include $(ROOT_DIR)/Makefile.pgxs
 # Extension .o files depend on the duckdb submodule HEAD marker (defined in
 # the root Makefile) so first-time builds init the submodule before
 # compiling.
-$(OBJS): $(PGDDB_DIR)/.git/modules/third_party/duckdb/HEAD
+$(OBJS): $(PGDDB_DIR)/.git/modules/duckdb/HEAD
 
 $(shlib): $(FULL_DUCKDB_LIB) $(OBJS)
 

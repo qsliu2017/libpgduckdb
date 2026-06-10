@@ -51,8 +51,8 @@ PostgreSQL and DuckDB headers are conflict-prone. Follow strict include order in
 
 Two submodules are upstream code -- never commit edits into their trees:
 
-- `duckdb/` (repo root; submodule *name* is still "third_party/duckdb"):
-  pinned DuckDB source shared by all extensions. Bump the gitlink only.
+- `duckdb/` (repo root): pinned DuckDB source shared by all extensions.
+  Bump the gitlink only.
 - `third_party/ducklake`: pristine community checkout. Our divergence
   lives in ordered `third_party/ducklake-NNN-<desc>.patch` files applied
   at build time; change behavior by adding/editing patch files, never by
