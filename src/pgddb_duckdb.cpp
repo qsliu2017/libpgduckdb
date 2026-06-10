@@ -127,6 +127,23 @@ DuckDBManager::Initialize() {
 	}
 	QueryOrThrow(context, "ATTACH DATABASE 'pgduckdb' (TYPE pgduckdb)");
 
+	/*
+	 * Force the SecretManager to perform its lazy initialization while
+	 * LocalFileSystem is still permitted. DuckDB 1.5.3 routes the persistent
+	 * (LocalFileSecretStorage) bootstrap through LocalDatabaseFileSystem,
+	 * which now honors disabled_filesystems. If the first query that touches
+	 * secrets happens after a consumer's RefreshConnectionState has disabled
+	 * LocalFileSystem for a non-superuser, the secret-storage bootstrap raises
+	 * a PermissionException ("File system LocalFileSystem has been disabled by
+	 * configuration") and every subsequent DropSecrets/LoadSecrets attempt
+	 * then fails with "Secret Storage with name 'memory' already registered"
+	 * because the temporary storage was loaded before the persistent one
+	 * threw. Eagerly initializing here keeps the bootstrap on the
+	 * instance-initialization connection, which no consumer has restricted
+	 * yet.
+	 */
+	QueryOrThrow(context, "SELECT count(*) FROM duckdb_secrets();");
+
 	OnPostInit(context);
 }
 
