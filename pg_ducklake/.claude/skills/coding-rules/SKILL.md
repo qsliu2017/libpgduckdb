@@ -45,18 +45,26 @@ PostgreSQL and DuckDB headers are conflict-prone. Follow strict include order in
 3. Local `pgducklake` headers
 4. PostgreSQL headers last, inside `extern "C"`, must include `<postgres.h>` at first.
 
-**FATAL macro conflict:** PostgreSQL's `elog.h` defines `#define FATAL 22`, which clobbers DuckDB's `ExceptionType::FATAL` enum member in `duckdb/common/exception.hpp`. Any header that transitively includes both will break. The fix is include order: DuckDB's `exception.hpp` (or any header that pulls it in, e.g., `string_util.hpp`, `error_data.hpp`) must be parsed *before* `postgres.h` defines the macro. Once parsed, C++ include guards prevent re-inclusion. Watch for indirect includes -- `pgduckdb/pgduckdb_contracts.hpp` and `pgducklake/utility/cpp_wrapper.hpp` both include `postgres.h`, so any DuckDB header they transitively need must already be included earlier in the translation unit.
+**FATAL macro conflict:** PostgreSQL's `elog.h` defines `#define FATAL 22`, which clobbers DuckDB's `ExceptionType::FATAL` enum member in `duckdb/common/exception.hpp`. Any header that transitively includes both will break. The fix is include order: DuckDB's `exception.hpp` (or any header that pulls it in, e.g., `string_util.hpp`, `error_data.hpp`) must be parsed *before* `postgres.h` defines the macro. Once parsed, C++ include guards prevent re-inclusion. Watch for indirect includes -- `pgddb/utility/cpp_wrapper.hpp` and `pgddb/pgddb_node.hpp` include `postgres.h`, so any DuckDB header they transitively need must already be included earlier in the translation unit.
 
 ## Third-party Submodules
 
-Treat `third_party/pg_duckdb` as upstream:
+Two submodules are upstream code -- never commit edits into their trees:
+
+- `duckdb/` (repo root; submodule *name* is still "third_party/duckdb"):
+  pinned DuckDB source shared by all consumers. Bump the gitlink only.
+- `third_party/ducklake`: pristine community checkout. Our divergence
+  lives in ordered `third_party/ducklake-NNN-<desc>.patch` files applied
+  at build time; change behavior by adding/editing patch files, never by
+  committing into the submodule tree.
+
+The pg_duckdb-derived infrastructure is no longer vendored: it is
+libpgddb (`libpgduckdb/` at the repo root, `namespace pgddb`), edited
+directly in this repo. When extending it for pg_ducklake:
 
 - Prefer additive hooks, avoid invasive edits.
-- Keep diffs minimal and upstream-friendly.
+- Keep diffs minimal and consumer-agnostic.
 - Ensure zero behavior change when hooks are unused.
-- **Never change the linkage or signature of upstream functions** (e.g., do not remove `extern "C"` from functions that already exist in `duckdb/main`). Only our own additions may use C++ linkage.
-- **Call pg_duckdb hooks via `pgduckdb::` from `pgduckdb/pgduckdb_contracts.hpp`** (our contract header). Upstream C-linkage functions (e.g., `RegisterDuckdbTableAm`) keep `extern "C"` and are called unqualified.
-- **Our exported C++ symbols in pg_duckdb must be in `namespace pgduckdb`** to avoid name conflicts. Declare them in `include/pgduckdb/pgduckdb_contracts.hpp` under `namespace pgduckdb`.
 
 ## Docs Style
 

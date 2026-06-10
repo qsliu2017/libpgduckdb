@@ -27,7 +27,7 @@ Run these checks silently to understand what is already set up:
 command -v ccache                          # compiler cache
 ls pg-*/bin/pg_config 2>/dev/null          # local PG installs in workdir
 ls ~/.dev/pg-*/configure 2>/dev/null       # PG source worktrees
-ls third_party/pg_duckdb/Makefile 2>/dev/null  # submodules initialized?
+ls "$(git rev-parse --show-toplevel)"/duckdb/Makefile 2>/dev/null  # duckdb submodule initialized?
 git worktree list                          # current worktree situation
 ```
 
@@ -136,27 +136,18 @@ grep -qF 'pg-*/' "$exclude_file" 2>/dev/null || echo 'pg-*/' >> "$exclude_file"
 
 ---
 
-## Step 4: Submodules and subtrees
+## Step 4: Submodules
 
-### pg_duckdb (subtree) and duckdb (submodule)
+### duckdb (submodule)
 
-`third_party/pg_duckdb` is a git subtree -- its source is committed
-directly in the repo. No initialization needed. To pull upstream
-changes:
-
-```bash
-git subtree pull --prefix=third_party/pg_duckdb \
-    https://github.com/relytcloud/pg_duckdb.git pgducklake --squash
-```
-
-Changes pushed to `main` that touch `third_party/pg_duckdb/` are
-automatically synced to `relytcloud/pg_duckdb:pgducklake` by CI.
-
-The DuckDB source at `third_party/pg_duckdb/third_party/duckdb` is
-the only submodule. Initialize it:
+pg_ducklake lives in the libpgduckdb monorepo: the pg_duckdb-derived
+shared infrastructure is plain in-repo source at `libpgduckdb/` (repo
+root) -- nothing to initialize. The DuckDB source is a submodule at
+the repo root, path `duckdb/` (the submodule *name* is still
+"third_party/duckdb" for .git/modules compatibility). Initialize it:
 
 ```bash
-git submodule update --init --depth=1 third_party/pg_duckdb/third_party/duckdb
+git -C "$(git rev-parse --show-toplevel)" submodule update --init --depth=1 duckdb
 ```
 
 **Time**: 5-10 min on first run (duckdb is large even with shallow
@@ -252,7 +243,7 @@ and the SQL files into the PG extension directory.
 
 **Wrong submodule commit** -- reset to what the branch expects:
 ```bash
-git submodule update third_party/pg_duckdb
+git -C "$(git rev-parse --show-toplevel)" submodule update duckdb pg_ducklake/third_party/ducklake
 ```
 
 **PG configure fails** -- missing build deps:

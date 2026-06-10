@@ -693,7 +693,7 @@ def main():
     parser.add_argument(
         "--queries-dir",
         type=str,
-        default="../../third_party/duckdb/extension/tpch/dbgen/queries/",
+        default="../../../duckdb/extension/tpch/dbgen/queries/",
         help="Directory containing TPC-H query SQL files",
     )
     parser.add_argument(

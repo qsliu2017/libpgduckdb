@@ -22,12 +22,12 @@ for multi-role environments. See also the upstream
 
 | Gap | Root Cause |
 |---|---|
-| SELECT/INSERT/UPDATE/DELETE table-level permissions | pg_duckdb's planner sets `permInfos = NULL`, skipping executor-level checks |
+| SELECT/INSERT/UPDATE/DELETE table-level permissions | the libpgddb planner sets `permInfos = NULL`, skipping executor-level checks |
 | Column-level SELECT restrictions | Same as above |
 | `ducklake.time_travel()` bypasses table-level checks | Table name is a text argument, not an RTE |
-| Non-superusers cannot use local file storage without explicit grants | pg_duckdb disables `LocalFileSystem` for users without `pg_read_server_files` + `pg_write_server_files`, blocking DuckLake catalog attach, reads, and writes ([#164](https://github.com/relytcloud/pg_ducklake/issues/164)) |
+| Non-superusers cannot use local file storage without explicit grants | libpgddb disables `LocalFileSystem` for users without `pg_read_server_files` + `pg_write_server_files`, blocking DuckLake catalog attach, reads, and writes ([#164](https://github.com/relytcloud/pg_ducklake/issues/164)) |
 
-These gaps exist because pg_duckdb's `DuckdbPlanNode()` only runs
+These gaps exist because libpgddb's `pgddb::PlanNode()` only runs
 `check_view_perms_recursive()` (which checks VIEW permissions) and sets
 `result->permInfos = NULL` in the `PlannedStmt`, causing the executor to skip
 all relation-level permission checks.
@@ -95,4 +95,4 @@ verifies the current behavior, including all known gaps.
 ## References
 
 - [DuckLake Access Control guide](https://ducklake.select/docs/stable/duckdb/guides/access_control) -- DuckLake's native ACL model
-- `third_party/pg_duckdb/src/pgduckdb_planner.cpp` -- `check_view_perms_recursive()` and `DuckdbPlanNode()`
+- `libpgduckdb/pgddb_planner.cpp` (repo root) -- `check_view_perms_recursive()` and `pgddb::PlanNode()`

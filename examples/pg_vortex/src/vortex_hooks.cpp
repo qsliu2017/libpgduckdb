@@ -1,5 +1,5 @@
 // pg_vortex's planner hook. Modelled on
-// examples/pg_duckdb/src/pgduckdb_hooks.cpp but stripped to a single
+// pg_duckdb/src/pgduckdb_hooks.cpp but stripped to a single
 // planner_hook that detects calls to pg_vortex.read_vortex via a tiny per-
 // consumer OID cache and routes to pg_vortex::PlanNode; chains otherwise.
 // No ExecutorStart/Finish (no mixed-write tracking; read-only). No

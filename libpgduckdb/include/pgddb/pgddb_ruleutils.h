@@ -60,7 +60,7 @@ typedef char *(*pgddb_relation_name_hook_t)(Oid relid);
 PGDDB_EXPORT void Register_pgddb_relation_name(pgddb_relation_name_hook_t fn);
 
 // (The CREATE TABLE column-type-name override is now a DdlUtils virtual; see
-// include/pgddb/pgddb_ddl.hpp.)
+// pgddb/pgddb_ddl.hpp.)
 
 // Is this a "fake" PG type that exists only to satisfy the PG parser and must
 // not be cast-emitted to DuckDB? Return true if it is one of yours.
@@ -142,7 +142,7 @@ const char *pgddb_db_and_schema_string(const char *postgres_schema_name, const c
 /*
  * The CREATE TABLE / ALTER TABLE / RENAME deparsers, and their consumer-specific
  * customization points (column-type-name mapping, create-table validation), now
- * live on the pgddb::DdlUtils class in include/pgddb/pgddb_ddl.hpp -- they are
+ * live on the pgddb::DdlUtils class in pgddb/pgddb_ddl.hpp -- they are
  * invoked directly by consumers, not by this (C) vendored-ruleutils surface.
  */
 

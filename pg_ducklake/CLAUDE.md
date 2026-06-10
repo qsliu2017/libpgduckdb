@@ -136,4 +136,4 @@ See `coding-rules` skill for the full docs tree and style guide.
 ## Miscellaneous
 
 - When exploring multiple files, run in parallel whenever possible, instead of processing them sequentially.
-- **Never `cd` into subdirectories** in Bash commands — it changes the working directory for subsequent calls. Use subshells (`(cd third_party/pg_duckdb && git ...)`) or `pushd`/`popd` (`pushd third_party/pg_duckdb; git ...; popd`) to keep the working directory at the project root.
+- **Never `cd` into subdirectories** in Bash commands — it changes the working directory for subsequent calls. Use subshells (`(cd third_party/ducklake && git ...)`) or `pushd`/`popd` (`pushd third_party/ducklake; git ...; popd`) to keep the working directory at the project root.
