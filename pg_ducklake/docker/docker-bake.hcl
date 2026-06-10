@@ -17,8 +17,10 @@ target "postgres" {
   inherits = ["shared"]
 
   # The extension build pulls the libpgddb kernel and the duckdb submodule
-  # from the repo root, so the context is the root (relative to this file).
-  context    = "../.."
+  # from the repo root, so the context is the root. buildx resolves relative
+  # context paths against the CWD (not this file), so bake MUST run from the
+  # repo root -- CI does, and docker-build.sh cd's there.
+  context    = "."
   dockerfile = "pg_ducklake/docker/Dockerfile"
 
   contexts = {
