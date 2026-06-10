@@ -1,5 +1,4 @@
-# Root Makefile. Three roles (plus Makefile.pgxs, the shared PGXS include
-# extensions pull in after setting their PGXS variables):
+# Root Makefile. Three roles (plus Makefile.pgxs, the shared PGXS include):
 #
 # 1. Delegating: `make <extension>/<target>` forwards to
 #    <extension>/Makefile via $(MAKE) -C. Extensions live at pg_duckdb/,
@@ -72,9 +71,8 @@ EXTENSION_CONFIGS ?=
 
 duckdb: $(FULL_DUCKDB_LIB)
 
-# NB: the submodule *name* (and thus its .git/modules/ gitdir) is still
-# "third_party/duckdb" from before the duckdb/ worktree-path move; renaming
-# it would break existing clones.
+# NB: the submodule *name* (gitdir under .git/modules/) is still
+# "third_party/duckdb"; renaming it would break existing clones.
 $(PGDDB_DIR)/.git/modules/third_party/duckdb/HEAD:
 	git -C $(PGDDB_DIR) submodule update --init --recursive
 

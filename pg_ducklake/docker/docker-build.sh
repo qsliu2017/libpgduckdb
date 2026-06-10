@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Local build of the pg_ducklake image. The build context is the repo root
-# and buildx resolves it against the CWD, so cd there first; the script
-# itself works from any CWD.
+# Local build of the pg_ducklake image. buildx resolves the bake context
+# against the CWD, so cd to the repo root first.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."

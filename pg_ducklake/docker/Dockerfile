@@ -1,8 +1,6 @@
 # pg_ducklake image: the official postgres image + the pg_ducklake extension.
-# Build context is the REPO ROOT (see docker-bake.hcl: context = "../..")
-# because the extension pulls the libpgddb kernel sources and the duckdb
-# submodule from there. Ignore rules live in Dockerfile.dockerignore
-# (BuildKit per-Dockerfile ignore, applied against the root context).
+# Build context is the REPO ROOT (the build needs the libpgddb kernel and the
+# duckdb submodule); ignore rules live in Dockerfile.dockerignore.
 FROM postgres_base AS base
 
 ###
@@ -21,19 +19,14 @@ RUN apt-get update -qq && \
     rm -rf /var/lib/apt/lists/*
 
 # vcpkg provides CRoaring for DuckLake >= v1.5 deletion vectors (declared in
-# the vendored ducklake's vcpkg.json; its CMakeLists does
-# find_package(roaring CONFIG REQUIRED)). Pinned to the same vcpkg commit as
-# CI (2025.12.12 tag; see .github/workflows/build_and_test.yaml). The
-# toolchain is consumed by pg_ducklake/Makefile via VCPKG_TOOLCHAIN_PATH.
-# VCPKG_FORCE_SYSTEM_BINARIES is required on linux/arm64 (and harmless on
-# amd64; cmake + ninja come from apt above).
+# the vendored ducklake's vcpkg.json), pinned to the same commit as CI.
+# VCPKG_FORCE_SYSTEM_BINARIES is required on linux/arm64 (harmless on amd64).
 ENV VCPKG_FORCE_SYSTEM_BINARIES=1
 RUN git clone https://github.com/microsoft/vcpkg.git /vcpkg && \
     git -C /vcpkg checkout 84bab45d415d22042bd0b9081aea57f362da3f35 && \
     /vcpkg/bootstrap-vcpkg.sh -disableMetrics
 ENV VCPKG_TOOLCHAIN_PATH=/vcpkg/scripts/buildsystems/vcpkg.cmake
-# vcpkg triplet for the build platform; read back via $(cat /vcpkg/triplet)
-# in the make invocations below.
+# vcpkg triplet for the target platform, read back in the make invocations.
 ARG TARGETARCH
 RUN { [ "$TARGETARCH" = "arm64" ] && echo arm64-linux || echo x64-linux; } > /vcpkg/triplet
 
@@ -51,16 +44,13 @@ USER postgres
 ### duckdb bundle layer -- heavy; only invalidated by the build wiring, the
 ### duckdb submodule, or the vendored ducklake inputs.
 COPY --chown=postgres:postgres Makefile Makefile.pgxs ./
-# Satisfy the duckdb submodule init-stamp (keyed by the submodule *name*,
-# still third_party/duckdb) so make skips `git submodule update`; the duckdb
-# source itself is COPY'd in directly.
+# Satisfy the duckdb submodule init-stamp (name-keyed path) so make skips
+# `git submodule update`; the duckdb source itself is COPY'd in directly.
 COPY --chown=postgres:postgres .git/modules/third_party/duckdb/HEAD .git/modules/third_party/duckdb/HEAD
 COPY --chown=postgres:postgres duckdb duckdb
 # The ducklake submodule ships WITH its gitdir (whitelisted in
-# Dockerfile.dockerignore) at the same relative layout as the host checkout,
-# so the Makefile's patch-stamp rule (git checkout/clean/apply; see
-# pg_ducklake/Makefile) works inside the build, whether the copied worktree
-# is pristine (CI) or already patched (local dev).
+# Dockerfile.dockerignore) at the same relative layout, so the Makefile's
+# patch-stamp rule (git checkout/clean/apply) works inside the build.
 COPY --chown=postgres:postgres .git/modules/examples/pg_ducklake/third_party/ducklake .git/modules/examples/pg_ducklake/third_party/ducklake
 COPY --chown=postgres:postgres pg_ducklake/Makefile pg_ducklake/pg_ducklake_extensions.cmake pg_ducklake/
 COPY --chown=postgres:postgres pg_ducklake/third_party pg_ducklake/third_party

@@ -22,9 +22,8 @@ OBJS += $(PGDDB_OBJS)
 DUCKLAKE_DIR := $(CURDIR)/third_party/ducklake
 DUCKLAKE_PATCHES := $(sort $(wildcard $(CURDIR)/third_party/ducklake-*.patch))
 DUCKLAKE_STAMP := $(DUCKLAKE_DIR)/.patched
-# NB: the submodule *name* (and thus its .git/modules/ gitdir) is still
-# "examples/pg_ducklake/third_party/ducklake" from before pg_ducklake moved
-# out of examples/; renaming it would break existing clones.
+# NB: the submodule *name* (gitdir under .git/modules/) is still
+# "examples/pg_ducklake/third_party/ducklake"; renaming it would break clones.
 DUCKLAKE_SUBMODULE_HEAD := $(ROOT_DIR)/.git/modules/examples/pg_ducklake/third_party/ducklake/HEAD
 DUCKLAKE_INCLUDE = -I$(DUCKLAKE_DIR)/src/include
 

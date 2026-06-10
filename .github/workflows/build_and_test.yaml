@@ -130,13 +130,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: duckdb/build/
-          # Hash ALL extensions' EXTENSION_CONFIGS: each extension builds
-          # libduckdb into its own build/<type>-<tag>/ subdir, so any
-          # change to either set must invalidate the cache. The v2 in the key
-          # busts caches from before the third_party/duckdb -> duckdb/ move:
-          # a move changes no file contents (so no hashFiles() change), but a
-          # restored CMakeCache.txt records the old absolute paths and makes
-          # cmake hard-error.
+          # Hash ALL extensions' EXTENSION_CONFIGS: each builds libduckdb into
+          # its own build/<type>-<tag>/ subdir. v2 busts pre-move caches whose
+          # CMakeCache.txt records the old third_party/duckdb absolute paths.
           key: duckdb-build-v2-ubuntu-24.04-${{ steps.versions.outputs.duckdb_sha }}-${{ hashFiles('pg_duckdb/third_party/pg_duckdb_extensions.cmake', 'examples/pg_vortex/pg_vortex_extensions.cmake', 'pg_ducklake/pg_ducklake_extensions.cmake') }}
 
       # Each extension builds its own libduckdb into
