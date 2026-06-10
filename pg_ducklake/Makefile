@@ -12,7 +12,7 @@ OBJS = $(SRCS:.cpp=.o)
 C_SRCS = $(wildcard src/*.c src/*/*.c)
 OBJS += $(C_SRCS:.c=.o)
 
-# libpgddb objects compiled in-place at $(ROOT_DIR)/libpgduckdb/.
+# Kernel objects compiled in-place at $(ROOT_DIR)/libpgduckdb/.
 OBJS += $(PGDDB_OBJS)
 
 # Vendored ducklake: pristine community submodule + ordered customization patches.
@@ -102,7 +102,7 @@ $(DUCKLAKE_STAMP): $(DUCKLAKE_PATCHES) $(DUCKLAKE_SUBMODULE_HEAD)
 	done
 	touch $@
 
-# Consumer .o files include patched ducklake headers and the duckdb build configures
+# Extension .o files include patched ducklake headers and the duckdb build configures
 # ducklake via SOURCE_DIR, so both must see the patched source: gate them on the stamp
 # (which transitively inits the submodule) and on the duckdb submodule HEAD marker.
 $(OBJS): $(PGDDB_DIR)/.git/modules/third_party/duckdb/HEAD $(DUCKLAKE_STAMP)
@@ -118,7 +118,7 @@ $(DUCKLAKE_EXT_LIB) $(POSTGRES_SCANNER_EXT_LIB): $(FULL_DUCKDB_LIB)
 # shlib pulls in $(FULL_DUCKDB_LIB) before linking. The ducklake / postgres_scanner
 # extension archives are force_load'd via SHLIB_LINK, so list them as prerequisites
 # too -- otherwise rebuilding only the vendored ducklake source (which regenerates
-# these .a's but no consumer .o) would not relink the dylib.
+# these .a's but no extension .o) would not relink the dylib.
 $(shlib): $(FULL_DUCKDB_LIB) $(DUCKLAKE_EXT_LIB) $(POSTGRES_SCANNER_EXT_LIB) $(OBJS)
 
 # Project formatting (project files only, not third_party/).

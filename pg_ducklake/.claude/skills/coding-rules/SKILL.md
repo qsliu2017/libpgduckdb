@@ -52,18 +52,18 @@ PostgreSQL and DuckDB headers are conflict-prone. Follow strict include order in
 Two submodules are upstream code -- never commit edits into their trees:
 
 - `duckdb/` (repo root; submodule *name* is still "third_party/duckdb"):
-  pinned DuckDB source shared by all consumers. Bump the gitlink only.
+  pinned DuckDB source shared by all extensions. Bump the gitlink only.
 - `third_party/ducklake`: pristine community checkout. Our divergence
   lives in ordered `third_party/ducklake-NNN-<desc>.patch` files applied
   at build time; change behavior by adding/editing patch files, never by
   committing into the submodule tree.
 
-The pg_duckdb-derived infrastructure is no longer vendored: it is
-libpgddb (`libpgduckdb/` at the repo root, `namespace pgddb`), edited
+The pg_duckdb-derived infrastructure is no longer vendored: it is the
+libpgddb kernel (`libpgduckdb/` at the repo root, `namespace pgddb`), edited
 directly in this repo. When extending it for pg_ducklake:
 
 - Prefer additive hooks, avoid invasive edits.
-- Keep diffs minimal and consumer-agnostic.
+- Keep diffs minimal and extension-agnostic.
 - Ensure zero behavior change when hooks are unused.
 
 ## Docs Style

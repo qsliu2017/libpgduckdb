@@ -1,7 +1,7 @@
-# Shared PGXS include for every consumer Makefile (pg_duckdb/, pg_ducklake/,
+# Shared PGXS include for every extension Makefile (pg_duckdb/, pg_ducklake/,
 # examples/pg_vortex/, and their test/ sub-Makefiles): PG version gate,
 # pg_config-derived paths, `include $(PGXS)`, and a vendored autodepend so
-# header edits retrigger rebuilds without `make clean`. Consumers must set
+# header edits retrigger rebuilds without `make clean`. Extensions must set
 # MODULE_big/OBJS/PG_*FLAGS BEFORE including this file (PGXS requirement).
 PG_CONFIG ?= pg_config
 

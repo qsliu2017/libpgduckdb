@@ -140,9 +140,9 @@ grep -qF 'pg-*/' "$exclude_file" 2>/dev/null || echo 'pg-*/' >> "$exclude_file"
 
 ### duckdb (submodule)
 
-pg_ducklake lives in the libpgduckdb monorepo: the pg_duckdb-derived
-shared infrastructure is plain in-repo source at `libpgduckdb/` (repo
-root) -- nothing to initialize. The DuckDB source is a submodule at
+pg_ducklake lives in the libpgduckdb monorepo: the libpgddb kernel is
+plain in-repo source at `libpgduckdb/` (repo root) -- nothing to
+initialize. The DuckDB source is a submodule at
 the repo root, path `duckdb/` (the submodule *name* is still
 "third_party/duckdb" for .git/modules compatibility). Initialize it:
 

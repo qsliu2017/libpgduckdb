@@ -1,4 +1,4 @@
-# Pull in libpgddb sources + duckdb-build wiring from the repo root.
+# Pull in the kernel sources + duckdb-build wiring from the repo root.
 ROOT_DIR := $(abspath $(CURDIR)/../..)
 EXTENSION_CONFIGS := $(CURDIR)/pg_vortex_extensions.cmake
 include $(ROOT_DIR)/Makefile
@@ -12,7 +12,7 @@ OBJS = $(SRCS:.cpp=.o)
 C_SRCS = $(wildcard src/*.c src/*/*.c)
 OBJS += $(C_SRCS:.c=.o)
 
-# libpgddb objects compiled in-place at $(ROOT_DIR)/libpgduckdb/.
+# Kernel objects compiled in-place at $(ROOT_DIR)/libpgduckdb/.
 OBJS += $(PGDDB_OBJS)
 
 # -lssl -lcrypto and --exclude-libs,ALL: see pg_duckdb's Makefile.
@@ -51,12 +51,11 @@ REGRESS_OPTS = --temp-instance=./tmp_check --temp-config=$(CURDIR)/regression.co
 
 include $(ROOT_DIR)/Makefile.pgxs
 
-# Consumer .o files depend on the duckdb submodule HEAD marker (defined in
+# Extension .o files depend on the duckdb submodule HEAD marker (defined in
 # the root Makefile) so first-time builds init the submodule before
 # compiling.
 $(OBJS): $(PGDDB_DIR)/.git/modules/third_party/duckdb/HEAD
 
-# shlib pulls in $(FULL_DUCKDB_LIB) before linking.
 $(shlib): $(FULL_DUCKDB_LIB) $(OBJS)
 
 clean-all: clean clean-duckdb

@@ -1,16 +1,17 @@
 # Root Makefile. Three roles (plus Makefile.pgxs, the shared PGXS include
-# consumers pull in after setting their PGXS variables):
+# extensions pull in after setting their PGXS variables):
 #
-# 1. Delegating: `make <consumer>/<target>` forwards to
-#    <consumer>/Makefile via $(MAKE) -C. Consumers live at pg_duckdb/,
+# 1. Delegating: `make <extension>/<target>` forwards to
+#    <extension>/Makefile via $(MAKE) -C. Extensions live at pg_duckdb/,
 #    pg_ducklake/, and examples/pg_vortex/.
-# 2. libpgddb source list: extension Makefiles `include` this file to pull
+# 2. Kernel source list: extension Makefiles `include` this file to pull
 #    in PGDDB_INCLUDE / PGDDB_OBJS / PGDDB_DUCKDB_INCLUDE. They append
-#    PGDDB_OBJS to OBJS so the libpgddb sources get bundled into their dylib.
-# 3. DuckDB submodule + build. Each consumer's EXTENSION_CONFIGS produces
+#    PGDDB_OBJS to OBJS so the kernel (libpgduckdb/) gets bundled into
+#    their dylib.
+# 3. DuckDB submodule + build. Each extension's EXTENSION_CONFIGS produces
 #    its own libduckdb_bundle.a in a tagged build/<type>-<tag>/ subdir;
-#    that .a is statically linked into the consumer's .so. We never publish
-#    libduckdb.so at $(PG_LIB), so consumers can't overwrite each other's
+#    that .a is statically linked into the extension's .so. We never publish
+#    libduckdb.so at $(PG_LIB), so extensions can't overwrite each other's
 #    runtime duckdb. cmake is driven directly (duckdb's `make release` /
 #    `make bundle-library` hard-code build/release/ so they can't share).
 
@@ -55,16 +56,16 @@ ifeq ($(DUCKDB_GEN), ninja)
 	DUCKDB_CMAKE_FORCE_COLOR := -DFORCE_COLORED_OUTPUT=1
 endif
 
-# Per-consumer build dir, keyed by the EXTENSION_CONFIGS content hash
-# (plus a human-readable basename prefix) so two consumers whose configs
-# happen to share a basename can still coexist, and re-pointing a
-# consumer at a different config naturally lands in a new dir.
-DUCKDB_CONSUMER_TAG := $(if $(EXTENSION_CONFIGS),$(basename $(notdir $(EXTENSION_CONFIGS)))-$(shell shasum -a 256 '$(EXTENSION_CONFIGS)' 2>/dev/null | cut -c1-8),default)
-DUCKDB_BUILD_DIR := $(PGDDB_DIR)/duckdb/build/$(DUCKDB_BUILD_TYPE)-$(DUCKDB_CONSUMER_TAG)
+# Per-extension build dir, keyed by the EXTENSION_CONFIGS content hash
+# (plus a human-readable basename prefix) so two extensions whose configs
+# happen to share a basename can still coexist, and re-pointing an
+# extension at a different config naturally lands in a new dir.
+DUCKDB_BUILD_TAG := $(if $(EXTENSION_CONFIGS),$(basename $(notdir $(EXTENSION_CONFIGS)))-$(shell shasum -a 256 '$(EXTENSION_CONFIGS)' 2>/dev/null | cut -c1-8),default)
+DUCKDB_BUILD_DIR := $(PGDDB_DIR)/duckdb/build/$(DUCKDB_BUILD_TYPE)-$(DUCKDB_BUILD_TAG)
 FULL_DUCKDB_LIB = $(DUCKDB_BUILD_DIR)/libduckdb_bundle.a
 
-# Consumer-provided absolute path to its *_extensions.cmake. Empty = no
-# third-party extensions baked in.
+# Extension-provided absolute path to its *_extensions.cmake. Empty = no
+# third-party duckdb extensions baked in.
 EXTENSION_CONFIGS ?=
 
 .PHONY: duckdb clean-duckdb
@@ -101,8 +102,8 @@ $(FULL_DUCKDB_LIB): $(PGDDB_DIR)/.git/modules/third_party/duckdb/HEAD $(EXTENSIO
 	@# whitelist avoids accidentally scooping up test fixtures cmake may
 	@# leave under extension/ in future versions.
 	@#
-	@# Consumers can set EXTENSION_BUNDLE_EXCLUDE = name1 name2 ... to keep
-	@# specific extensions out of the bundle. Useful when a consumer
+	@# Extensions can set EXTENSION_BUNDLE_EXCLUDE = name1 name2 ... to keep
+	@# specific duckdb extensions out of the bundle. Useful when an extension
 	@# force-loads the standalone lib<name>_extension.a separately (e.g.
 	@# pg_ducklake) -- bundling it as well causes Linux ld to fail with
 	@# multiple-definition errors.
@@ -125,6 +126,6 @@ $(FULL_DUCKDB_LIB): $(PGDDB_DIR)/.git/modules/third_party/duckdb/HEAD $(EXTENSIO
 clean-duckdb:
 	rm -rf $(PGDDB_DIR)/duckdb/build
 
-# Delegate make <consumer>/<target> to <consumer>/Makefile.
+# Delegate make <extension>/<target> to <extension>/Makefile.
 pg_duckdb/% pg_ducklake/% examples/%:
 	$(MAKE) -C $(@D) $(@F)

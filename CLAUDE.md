@@ -1,6 +1,7 @@
 # CLAUDE.md
 
-C/C++ header & include rules (libpgddb core + `examples/*` consumers). PG and
+C/C++ header & include rules for the libpgddb kernel (`libpgduckdb/`) and
+the extensions (`pg_duckdb/`, `pg_ducklake/`, `examples/pg_vortex/`). PG and
 DuckDB headers are include-order-sensitive: PG's `elog.h` `#define FATAL`
 clobbers DuckDB's `ExceptionType::FATAL`, so DuckDB headers must precede
 `postgres.h`.
@@ -17,9 +18,9 @@ clobbers DuckDB's `ExceptionType::FATAL`, so DuckDB headers must precede
 
 Ordered groups, blank line between, alphabetical within each:
 
-1. own/sibling module headers (`"pgducklake/..."`, or `"pgddb/..."` in core)
+1. own/sibling module headers (`"pgducklake/..."`, or `"pgddb/..."` in the kernel)
 2. C/C++ std `<...>`
-3. postgres-free `"pgddb/..."` (consumers; these pull DuckDB)
+3. postgres-free `"pgddb/..."` (extensions; these pull DuckDB)
 4. DuckDB/DuckLake `<...>`
 5. `extern "C"` { `postgres.h` first, then PG headers, then postgres-dependent
    pgddb C headers like `pgddb_ruleutils.h` }

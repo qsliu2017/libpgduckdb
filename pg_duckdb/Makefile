@@ -1,8 +1,8 @@
 .PHONY: clean-all lintcheck check-regression-duckdb clean-regression
 
-# Pull in libpgddb sources + duckdb-build wiring from the repo root.
+# Pull in the kernel sources + duckdb-build wiring from the repo root.
 ROOT_DIR := $(abspath $(CURDIR)/..)
-# Consumers must set EXTENSION_CONFIGS BEFORE including the root Makefile so
+# Extensions must set EXTENSION_CONFIGS BEFORE including the root Makefile so
 # the $(FULL_DUCKDB_LIB) rule sees the right prereq.
 EXTENSION_CONFIGS := $(CURDIR)/third_party/pg_duckdb_extensions.cmake
 include $(ROOT_DIR)/Makefile
@@ -19,7 +19,7 @@ OBJS = $(subst .cpp,.o, $(SRCS))
 C_SRCS = $(wildcard src/*.c src/*/*.c)
 OBJS += $(subst .c,.o, $(C_SRCS))
 
-# libpgddb objects, compiled in-place at $(ROOT_DIR)/libpgduckdb/.
+# Kernel objects, compiled in-place at $(ROOT_DIR)/libpgduckdb/.
 OBJS += $(PGDDB_OBJS)
 
 # -lssl -lcrypto: the bundle's vendored httplib (in duckdb-httpfs) refs
@@ -28,7 +28,7 @@ OBJS += $(PGDDB_OBJS)
 PG_DUCKDB_LINK_FLAGS = $(FULL_DUCKDB_LIB) -lcurl -lssl -lcrypto -lstdc++ -llz4
 
 # --exclude-libs,ALL hides symbols from every static archive we pull in
-# (notably libduckdb_bundle.a) so the consumer .so only exports its own
+# (notably libduckdb_bundle.a) so the extension .so only exports its own
 # UDFs + _PG_init. Prevents UDF-name collisions with bundled-extension
 # C symbols as more extensions are added. Linux/GNU-ld only; macOS ld
 # has no direct equivalent (the pg_vortex_version rename remains as a
@@ -76,13 +76,12 @@ src/pgduckdb.o: PG_CPPFLAGS += -DPG_DUCKDB_VERSION="\"$(PG_DUCKDB_VERSION)\""
 
 # We need the DuckDB header files to build our own .o files. Depend on the
 # submodule HEAD marker (defined in the root Makefile) so first-time builds
-# init the submodule before compiling consumer .o files.
+# init the submodule before compiling extension .o files.
 $(OBJS): $(PGDDB_DIR)/.git/modules/third_party/duckdb/HEAD
 
 COMPILE.cc.bc += $(PG_CPPFLAGS)
 COMPILE.cxx.bc += $(PG_CXXFLAGS)
 
-# shlib is the final output product - make duckdb and all .o dependencies
 $(shlib): $(FULL_DUCKDB_LIB) $(OBJS)
 
 NO_INSTALLCHECK = 1
