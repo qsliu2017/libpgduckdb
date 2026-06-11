@@ -4,12 +4,10 @@ ROOT_DIR = ../../..
 
 include $(ROOT_DIR)/Makefile.pgxs
 
-# pg_duckdb stays in shared_preload_libraries (isolation.conf) so the
-# suite still covers library-level coexistence (both _PG_init's, chained
-# hooks, two kernel copies in one backend), but its EXTENSION is not
-# created: CREATE EXTENSION pg_ducklake after pg_duckdb fails on the
-# overlapping public read_csv/read_parquet stubs (SQL-level coexistence
-# gap, tracked separately), and no isolation spec uses pg_duckdb objects.
+# pg_duckdb is no longer loaded here (neither preload nor extension):
+# CREATE EXTENSION pg_ducklake after pg_duckdb fails on the overlapping
+# public read_csv/read_parquet stubs, and no isolation spec uses
+# pg_duckdb objects. See isolation.conf for the coexistence status.
 check-isolation:
 	TEST_DIR=$(CURDIR) $(pg_isolation_regress_installcheck) \
 	--encoding=UTF8 \
