@@ -392,9 +392,10 @@ async def test_aggregates_numeric_seam(conn):
 
 async def test_add_column_with_text_default(conn):
     """String-literal column DEFAULTs: PG's expression deparse decorates
-    string constants with a cast ('x'::text) that DuckLake rejected as a
-    non-literal default (numeric literals deparse bare and always worked);
-    the kernel now deparses plain Const defaults undecorated."""
+    string constants with a cast ('x'::text), and DuckLake rejected any
+    cast-decorated default as non-literal (numeric literals deparse bare
+    and always worked). Fixed in DuckLake itself -- patch 008 constant-
+    folds cast-over-constant defaults (upstreamable)."""
     await conn.execute("CREATE TABLE t (id int) USING ducklake")
     await conn.execute("INSERT INTO t VALUES (1)")
     await conn.execute("ALTER TABLE t ADD COLUMN tag text DEFAULT 'x'")
@@ -406,12 +407,13 @@ async def test_add_column_with_text_default(conn):
 
 
 async def test_column_default_literal_edge_cases(conn):
-    """Edge cases of the literal-default deparse: explicitly cast string
-    constants (cook to RelabelType over Const), special float values (bare
-    NaN parses as a column reference in DuckDB), backslash-containing
-    strings (PG emits E'...' escape strings, which DuckDB accepts), and
-    bytea (PG's whole-string hex form would silently decode wrong through
-    DuckDB's per-byte VARCHAR->BLOB cast)."""
+    """Edge cases of column-default handling through the deparse +
+    DuckLake fold (patch 008): explicitly cast string constants, special
+    float values ('NaN'::float8 -- must arrive quoted, bare NaN parses as
+    a column reference in DuckDB), backslash-containing strings (PG emits
+    E'...' escape strings, which DuckDB accepts), and bytea (PG's
+    whole-string hex form silently decodes wrong through DuckDB's per-byte
+    VARCHAR->BLOB cast; get_const_expr now emits the per-byte form)."""
     import math
 
     await conn.execute("CREATE TABLE t (id int) USING ducklake")
