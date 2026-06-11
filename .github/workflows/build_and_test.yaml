@@ -207,7 +207,7 @@ jobs:
         if: failure() && steps.pgducklake_installcheck.outcome == 'failure'
         run: |
           cat pg_ducklake/test/isolation/output_iso/regression.diffs || true
-          cat pg_ducklake/test/isolation/tmp_check/log/postmaster.log || true
+          cat pg_ducklake/test/isolation/output_iso/log/postmaster.log || true
 
       - name: Upload pg_ducklake regression artifacts on failure
         if: failure() && steps.pgducklake_installcheck.outcome == 'failure'
@@ -220,7 +220,6 @@ jobs:
             pg_ducklake/test/regression/results/
             pg_ducklake/test/regression/log/
             pg_ducklake/test/isolation/output_iso/
-            pg_ducklake/test/isolation/tmp_check/log/
 
       # ---- pg_ducklake e2e (pg_ducklake/test/e2e: uv + pytest + asyncpg +
       # external duckdb client + dockerized MinIO for s3:// coverage) ----

@@ -11,6 +11,7 @@
 
 #include "pgducklake/catalog_sync.hpp"
 #include "pgducklake/constants.hpp"
+#include "pgducklake/duckdb_manager.hpp"
 #include "pgducklake/guc.hpp"
 #include "pgducklake/pgducklake_metadata_manager.hpp"
 
@@ -38,12 +39,14 @@ extern "C" {
 #include "access/htup_details.h"
 #include "access/skey.h"
 #include "access/table.h"
+#include "access/xact.h"
 #include "catalog/pg_class.h"
 #include "catalog/pg_namespace.h"
 #include "executor/spi.h"
 #include "utils/elog.h"
 #include "utils/fmgroids.h"
 #include "utils/guc.h"
+#include "utils/resowner.h"
 #include "utils/snapmgr.h"
 #include "utils/syscache.h"
 }
@@ -124,6 +127,73 @@ InsertSPITupleTableIntoChunk(duckdb::DataChunk &output, SPITupleTable *tuptable,
 	pfree(column_append);
 }
 
+/*
+ * Run one SPI_execute inside an internal subtransaction so a PostgreSQL
+ * ERROR (e.g. a unique-violation raised by a concurrent DuckLake commit)
+ * can be caught and reported to DuckDB without corrupting backend state.
+ *
+ * Catching the longjmp WITHOUT a subtransaction (the previous approach)
+ * leaks every resource the failed executor had open -- most visibly the
+ * ActiveSnapshot entries it pushed, which later trip the
+ * "portal->portalSnapshot == GetActiveSnapshot()" assertion (pquery.c)
+ * when the enclosing statement's portal completes. The subtransaction
+ * rollback is what unwinds those.
+ *
+ * Discipline notes (mirrors PL/pgSQL's exception blocks):
+ * - SetAllowSubtransaction(true) opens the DuckLakeSubXactCallback gate
+ *   that otherwise rejects SAVEPOINTs while DuckDB holds a transaction.
+ * - CurrentResourceOwner must be restored by hand after both
+ *   ReleaseCurrentSubTransaction and RollbackAndReleaseCurrentSubTransaction;
+ *   forgetting it leaves later snapshot registrations owned by the dead
+ *   subtransaction's resource owner ("snapshot reference is not owned by
+ *   resource owner TopTransaction" at commit).
+ * - The GUC nest level is created OUTSIDE the subtransaction (our
+ *   client_min_messages override must survive the rollback) and popped
+ *   explicitly at the end.
+ */
+static int
+SPIExecuteInSubtransaction(const duckdb::string &query, bool &had_error, duckdb::string &error_message) {
+	MemoryContext old_context = CurrentMemoryContext;
+	ResourceOwner old_owner = CurrentResourceOwner;
+	int ret = -1;
+	had_error = false;
+
+	/* Suppress NOTICE-level chatter from internal metadata SQL run via SPI. DuckLake emits
+	 * CREATE TABLE IF NOT EXISTS for per-table inlined-delete tables; DuckDB silently ignores
+	 * re-creates, but real PostgreSQL raises a NOTICE that would otherwise leak to the client.
+	 * Scoped via a GUC nest level and restored by AtEOXact_GUC below (and on transaction abort). */
+	int save_nestlevel = NewGUCNestLevel();
+	::SetConfigOption("client_min_messages", "warning", PGC_USERSET, PGC_S_SESSION);
+
+	SetAllowSubtransaction(true);
+	BeginInternalSubTransaction(NULL);
+	MemoryContextSwitchTo(old_context);
+
+	PG_TRY();
+	{
+		ret = SPI_execute(query.c_str(), false, 0);
+		ReleaseCurrentSubTransaction();
+	}
+	PG_CATCH();
+	{
+		MemoryContextSwitchTo(old_context);
+		ErrorData *edata = CopyErrorData();
+		error_message = edata->message;
+		FreeErrorData(edata);
+		FlushErrorState();
+		RollbackAndReleaseCurrentSubTransaction();
+		had_error = true;
+	}
+	PG_END_TRY();
+
+	SetAllowSubtransaction(false);
+	MemoryContextSwitchTo(old_context);
+	CurrentResourceOwner = old_owner;
+
+	AtEOXact_GUC(false, save_nestlevel);
+	return ret;
+}
+
 static duckdb::unique_ptr<duckdb::QueryResult>
 CreateSPIResult(const duckdb::string &query) {
 	elog(DEBUG1, "Creating SPI result for query: %s", query.c_str());
@@ -134,34 +204,9 @@ CreateSPIResult(const duckdb::string &query) {
 	SPI_connect();
 	PushActiveSnapshot(GetTransactionSnapshot());
 
-	MemoryContext old_context = CurrentMemoryContext;
 	duckdb::string error_message;
 	bool had_error = false;
-	int ret = -1;
-
-	/* Suppress NOTICE-level chatter from internal metadata SQL run via SPI. DuckLake emits
-	 * CREATE TABLE IF NOT EXISTS for per-table inlined-delete tables; DuckDB silently ignores
-	 * re-creates, but real PostgreSQL raises a NOTICE that would otherwise leak to the client.
-	 * Scoped via a GUC nest level and restored by AtEOXact_GUC below (and on transaction abort). */
-	int save_nestlevel = NewGUCNestLevel();
-	::SetConfigOption("client_min_messages", "warning", PGC_USERSET, PGC_S_SESSION);
-
-	PG_TRY();
-	{
-		ret = SPI_execute(query.c_str(), false, 0);
-	}
-	PG_CATCH();
-	{
-		MemoryContextSwitchTo(old_context);
-		ErrorData *edata = CopyErrorData();
-		error_message = edata->message;
-		FreeErrorData(edata);
-		FlushErrorState();
-		had_error = true;
-	}
-	PG_END_TRY();
-
-	AtEOXact_GUC(false, save_nestlevel);
+	int ret = SPIExecuteInSubtransaction(query, had_error, error_message);
 
 	if (had_error) {
 		PopActiveSnapshot();
@@ -282,52 +327,9 @@ CreateSPIExecuteInSubtransaction(const duckdb::string &query) {
 
 	SPI_connect();
 
-	MemoryContext old_context = CurrentMemoryContext;
 	duckdb::string error_message;
 	bool had_error = false;
-	int ret = -1;
-
-	/*
-	 * WORKAROUND: BeginInternalSubTransaction is intentionally NOT used here.
-	 *
-	 * The full xact + subxact callback infrastructure is now in place
-	 * (RegisterXactCallback() in _PG_init installs both DuckLakeXactCallback
-	 * and DuckLakeSubXactCallback, and DuckdbAllowSubtransaction toggles the
-	 * subxact gate). Even with that machinery matching upstream pg_duckdb,
-	 * opening a subtransaction here still triggers PG to raise
-	 * "snapshot reference X is not owned by resource owner TopTransaction"
-	 * at implicit-autocommit time. The error is sent to the client but never
-	 * written to the server log, which makes it look like it comes from
-	 * AtEOXact_Snapshot at parent commit -- after our subtxn release returns
-	 * cleanly. Tracking down which snapshot is being unregistered against
-	 * the wrong owner (and why upstream pg_ducklake doesn't hit it) is a
-	 * follow-up that needs PG-internals expertise.
-	 *
-	 * Cost: DuckLake's FlushChanges no longer retries on unique-violation;
-	 * concurrent-commit conflicts surface as top-level INSERT failures
-	 * instead of being retried. The regression suite is single-writer so
-	 * doesn't exercise this path.
-	 */
-	/* Suppress NOTICE-level chatter from internal metadata DDL run via SPI (see CreateSPIResult). */
-	int save_nestlevel = NewGUCNestLevel();
-	::SetConfigOption("client_min_messages", "warning", PGC_USERSET, PGC_S_SESSION);
-
-	PG_TRY();
-	{
-		ret = SPI_execute(query.c_str(), false, 0);
-	}
-	PG_CATCH();
-	{
-		MemoryContextSwitchTo(old_context);
-		ErrorData *edata = CopyErrorData();
-		error_message = edata->message;
-		FreeErrorData(edata);
-		FlushErrorState();
-		had_error = true;
-	}
-	PG_END_TRY();
-
-	AtEOXact_GUC(false, save_nestlevel);
+	int ret = SPIExecuteInSubtransaction(query, had_error, error_message);
 
 	if (!had_error && ret < 0) {
 		error_message = duckdb::string("SPI execute failed: ") + SPI_result_code_string(ret);
