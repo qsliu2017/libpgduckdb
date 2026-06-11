@@ -24,16 +24,18 @@ diff --git a/src/storage/ducklake_catalog.cpp b/src/storage/ducklake_catalog.cpp
 index 44ef3d4f..8bba4dab 100644
 --- a/src/storage/ducklake_catalog.cpp
 +++ b/src/storage/ducklake_catalog.cpp
-@@ -793,7 +793,12 @@ shared_ptr<DuckLakeTableStats> DuckLakeCatalog::GetTableStats(DuckLakeTransactio
+@@ -793,7 +793,14 @@ shared_ptr<DuckLakeTableStats> DuckLakeCatalog::GetTableStats(DuckLakeTransactio
  shared_ptr<DuckLakeTableStats> DuckLakeCatalog::GetTableStats(DuckLakeTransaction &transaction,
                                                                DuckLakeSnapshot snapshot, TableIndex table_id) {
  	auto &cache = GetObjectCacheInstance();
 -	auto key = StatsCacheKey(snapshot.next_file_id, table_id);
 +	// Key the stats cache on schema_version as well as next_file_id: the cached column stats carry the
 +	// column TYPES of the schema they were built against, and a catalog-only ALTER COLUMN ... TYPE bumps
-+	// schema_version without advancing next_file_id. Without schema_version in the key, the post-ALTER
-+	// read would hit the pre-ALTER entry and serve stats tagged with the old column type, mismatching the
-+	// new data files in MergeStats and dropping the table-level min/max (corrupting zone-map reads).
++	// schema_version without advancing next_file_id. Without schema_version in the key, the first
++	// commit after the ALTER seeds its global-stats merge from the stale-typed pre-ALTER entry,
++	// MergeStats drops the table-level min/max on the type mismatch, and the next commit rebuilds them
++	// from its own file alone -- a type-consistent but value-wrong min that DuckDB's compressed
++	// materialization then uses as an exact re-base constant, mis-decoding pre-ALTER rows (+256).
 +	auto key = StatsCacheKey(snapshot.next_file_id, snapshot.schema_version, table_id);
  	auto cached = cache.Get<DuckLakeTableStatsCacheEntry>(key);
  	if (cached) {
@@ -78,15 +80,17 @@ diff --git a/src/storage/ducklake_stats.cpp b/src/storage/ducklake_stats.cpp
 index 1d94d7ed..ec9ba88d 100644
 --- a/src/storage/ducklake_stats.cpp
 +++ b/src/storage/ducklake_stats.cpp
-@@ -99,6 +99,21 @@ DuckLakeColumnStats DuckLakeColumnStats::FromGlobalStats(const LogicalType &type
+@@ -99,6 +99,23 @@ DuckLakeColumnStats DuckLakeColumnStats::FromGlobalStats(const LogicalType &type
  	return stats;
  }
  
 +// Reconcile a string-encoded stat value to a (possibly new) target type. Returns true if the value
-+// remains valid under the target type. After ALTER COLUMN ... TYPE the table-level seed stats carry the
-+// pre-ALTER type while the new data file carries the post-ALTER type; casting (e.g. INTEGER 1 -> BIGINT 1)
-+// keeps the value comparable instead of discarding it, which would drop the table-level min/max and
-+// drive a zone-map mis-decode on read.
++// remains valid under the target type. When ALTER COLUMN ... TYPE and an INSERT commit in the same
++// transaction, the seed stats are legitimately read at the txn-start snapshot (pre-ALTER type) while
++// the new data file carries the post-ALTER type -- no cache key can prevent that mismatch. Casting
++// (e.g. INTEGER 1 -> BIGINT 1) is lossless under DuckLake's widening-only type promotions and keeps
++// the value comparable instead of discarding it, which would null the table-level min/max and let the
++// next commit rebuild them value-wrong (see the StatsCacheKey comment for the read-side consequence).
 +static bool ReconcileStatToType(string &value, const LogicalType &target) {
 +	Value casted;
 +	string error;
