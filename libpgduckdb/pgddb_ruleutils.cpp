@@ -680,6 +680,44 @@ DuckdbRuleutils::get_rename_relationdef(Oid relation_oid, RenameStmt *rename_stm
 }
 
 /*
+ * Deparse a cooked column DEFAULT expression for DuckDB. PG's generic
+ * expression deparse decorates constants with an explicit type cast
+ * ('x'::text), which DuckDB parses as a cast expression -- and DuckLake's
+ * ADD COLUMN / SET DEFAULT only accept plain literal defaults, rejecting
+ * anything else with "cannot add a column with a non-literal default
+ * value". For a bare Const the cast is redundant anyway (cookDefault has
+ * already coerced it to the column type), so emit the undecorated literal:
+ * bare for numeric types, quoted for everything else (DuckLake casts the
+ * string to the column type). Non-Const expressions keep the generic
+ * deparse.
+ */
+static char *
+pgddb_deparse_default_expr(Node *expr, List *context) {
+	if (!IsA(expr, Const)) {
+		return pgddb_deparse_expression(expr, context, false, false);
+	}
+	Const *con = (Const *)expr;
+	if (con->constisnull) {
+		return pstrdup("NULL");
+	}
+	Oid typoutput;
+	bool typisvarlena;
+	getTypeOutputInfo(con->consttype, &typoutput, &typisvarlena);
+	char *raw = OidOutputFunctionCall(typoutput, con->constvalue);
+	switch (con->consttype) {
+	case INT2OID:
+	case INT4OID:
+	case INT8OID:
+	case FLOAT4OID:
+	case FLOAT8OID:
+	case NUMERICOID:
+		return raw;
+	default:
+		return quote_literal_cstr(raw);
+	}
+}
+
+/*
  * DuckdbRuleutils::get_alter_tabledef returns the DuckDB ALTER TABLE command(s)
  * for the given table. DuckDB does not support multiple ALTER subcommands in a
  * single statement, so each subcommand is emitted as its own ALTER TABLE.
@@ -730,7 +768,7 @@ DuckdbRuleutils::get_alter_tabledef(Oid relation_oid, AlterTableStmt *alter_stmt
 					if (constraint->raw_expr) {
 						auto expr = cookDefault(pstate, constraint->raw_expr, attribute->atttypid, attribute->atttypmod,
 						                        col->colname, attribute->attgenerated);
-						char *default_string = pgddb_deparse_expression(expr, relation_context, false, false);
+						char *default_string = pgddb_deparse_default_expr((Node *)expr, relation_context);
 						appendStringInfo(&buffer, " DEFAULT %s", default_string);
 					}
 					break;
@@ -799,7 +837,7 @@ DuckdbRuleutils::get_alter_tabledef(Oid relation_oid, AlterTableStmt *alter_stmt
 			if (cmd->def) {
 				auto expr = cookDefault(pstate, cmd->def, attribute->atttypid, attribute->atttypmod, column_name,
 				                        attribute->attgenerated);
-				char *default_string = pgddb_deparse_expression(expr, relation_context, false, false);
+				char *default_string = pgddb_deparse_default_expr((Node *)expr, relation_context);
 				appendStringInfo(&buffer, "ALTER COLUMN %s SET DEFAULT %s; ", quote_identifier(column_name),
 				                 default_string);
 			} else {

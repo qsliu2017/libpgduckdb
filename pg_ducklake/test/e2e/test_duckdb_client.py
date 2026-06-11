@@ -69,8 +69,6 @@ async def test_duckdb_writes_pg_reads(local_lake, pg):
 async def test_schema_changes_visible_to_duckdb(local_lake, pg):
     await pg.execute("CREATE TABLE t (id int) USING ducklake")
     await pg.execute("INSERT INTO t VALUES (1)")
-    # no DEFAULT here: string-literal column defaults are unsupported, see
-    # test_crud.test_add_column_with_text_default
     await pg.execute("ALTER TABLE t ADD COLUMN tag text")
     await pg.execute("INSERT INTO t VALUES (2, 'y')")
 
