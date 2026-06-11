@@ -326,10 +326,19 @@ CreateSPIExecuteInSubtransaction(const duckdb::string &query) {
 	pgddb::PostgresScopedStackReset scoped_stack_reset;
 
 	SPI_connect();
+	// The commit batch can run from the PRE_COMMIT xact callback at the end
+	// of a pipelined implicit transaction (extended protocol, e.g. asyncpg
+	// executemany: finish_xact_command at Sync), where no portal and no
+	// active snapshot exist -- SPI then rejects the batch with "cannot
+	// execute SQL without an outer snapshot or portal". Push one explicitly,
+	// like CreateSPIResult does for reads.
+	PushActiveSnapshot(GetTransactionSnapshot());
 
 	duckdb::string error_message;
 	bool had_error = false;
 	int ret = SPIExecuteInSubtransaction(query, had_error, error_message);
+
+	PopActiveSnapshot();
 
 	if (!had_error && ret < 0) {
 		error_message = duckdb::string("SPI execute failed: ") + SPI_result_code_string(ret);

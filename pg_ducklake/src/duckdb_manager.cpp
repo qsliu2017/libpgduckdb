@@ -54,6 +54,10 @@
 #include <duckdb/transaction/transaction_context.hpp>
 #include <ducklake_extension.hpp>
 
+// cpp_wrapper.hpp pulls postgres.h, so it sits between the DuckDB headers
+// and the extern "C" PostgreSQL block.
+#include "pgddb/utility/cpp_wrapper.hpp"
+
 extern "C" {
 #include "postgres.h"
 
@@ -275,7 +279,7 @@ InitRuleutilsHooks() {
  * since its writes go through PG's heap, not a separate DuckDB store).
  */
 static void
-DuckLakeXactCallback(XactEvent event, void * /*arg*/) {
+DuckLakeXactCallback_Cpp(XactEvent event) {
 	if (!pgducklake::DuckDBManager::IsInitialized()) {
 		return;
 	}
@@ -305,6 +309,19 @@ DuckLakeXactCallback(XactEvent event, void * /*arg*/) {
 }
 
 /*
+ * C boundary for the callback: a DuckLake commit failure throws a C++
+ * exception (e.g. duckdb::TransactionException), and CallXactCallbacks is a
+ * plain C frame -- letting it propagate calls std::terminate and takes the
+ * whole backend down with SIGABRT. InvokeCPPFunc converts it into a regular
+ * PG ERROR so the transaction aborts cleanly. Mirrors pg_duckdb's
+ * DuckdbXactCallback, which the port dropped.
+ */
+static void
+DuckLakeXactCallback(XactEvent event, void * /*arg*/) {
+	InvokeCPPFunc(DuckLakeXactCallback_Cpp, event);
+}
+
+/*
  * Backing store for the DuckdbAllowSubtransaction() contract. DuckLake's
  * metadata-commit path needs to open a PG subtransaction so its retry loop
  * can catch unique-violation conflicts; we flip this guard on around that
@@ -327,8 +344,7 @@ SetAllowSubtransaction(bool allow) {
  * corrupting PG's snapshot bookkeeping at parent commit time.
  */
 static void
-DuckLakeSubXactCallback(SubXactEvent event, SubTransactionId /*my_subid*/, SubTransactionId /*parent_subid*/,
-                        void * /*arg*/) {
+DuckLakeSubXactCallback_Cpp(SubXactEvent event) {
 	if (!pgducklake::DuckDBManager::IsInitialized()) {
 		return;
 	}
@@ -343,6 +359,14 @@ DuckLakeSubXactCallback(SubXactEvent event, SubTransactionId /*my_subid*/, SubTr
 	if (event == SUBXACT_EVENT_START_SUB && !allow_subtransaction) {
 		throw duckdb::NotImplementedException("SAVEPOINT is not supported in DuckDB");
 	}
+}
+
+/* Same C boundary as DuckLakeXactCallback: the throw above must become a PG
+ * ERROR, not an uncaught C++ exception in a C frame. */
+static void
+DuckLakeSubXactCallback(SubXactEvent event, SubTransactionId /*my_subid*/, SubTransactionId /*parent_subid*/,
+                        void * /*arg*/) {
+	InvokeCPPFunc(DuckLakeSubXactCallback_Cpp, event);
 }
 
 void

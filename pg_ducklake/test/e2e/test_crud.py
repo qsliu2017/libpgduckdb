@@ -274,23 +274,20 @@ async def test_parameterized_dml(conn):
     assert [tuple(r) for r in rows] == [(2, "bob"), (3, "carl")]
 
 
-@pytest.mark.skip(
-    reason=(
-        "crashes the backend (SIGABRT): asyncpg's executemany pipelines "
-        "Bind/Execute and the DuckLake commit then runs 'without an outer "
-        "snapshot or portal'; the resulting duckdb::TransactionException "
-        "escapes uncaught through the C boundary and aborts the process, "
-        "taking the whole cluster through crash recovery. Unskip once the "
-        "commit path catches this. Repro: executemany('INSERT INTO t "
-        "VALUES ($1, $2)', rows)"
-    )
-)
 async def test_executemany_pipeline(conn):
+    """asyncpg's executemany pipelines Bind/Execute in one implicit
+    transaction, so the DuckLake commit runs at Sync-time PRE_COMMIT with
+    no portal or active snapshot. This used to SIGABRT the backend (the
+    commit batch's SPI errored and the TransactionException escaped
+    uncaught through the C xact-callback frame); fixed by pushing a
+    snapshot around the commit batch and guarding the callback."""
     await conn.execute("CREATE TABLE t (id int, name text) USING ducklake")
     await conn.executemany(
         "INSERT INTO t VALUES ($1, $2)", [(1, "a"), (2, "b"), (3, "c")]
     )
     assert await conn.fetchval("SELECT count(*) FROM t") == 3
+    rows = await conn.fetch("SELECT id, name FROM t ORDER BY id")
+    assert [tuple(r) for r in rows] == [(1, "a"), (2, "b"), (3, "c")]
 
 
 async def test_prepared_statement_reuse(conn):
@@ -393,25 +390,19 @@ async def test_aggregates_numeric_seam(conn):
     ) == pytest.approx(25.25)
 
 
-@pytest.mark.xfail(
-    reason=(
-        "string-literal column DEFAULTs are rejected by the DDL trigger "
-        "('Not implemented Error: We cannot add a column with a non-literal "
-        "default value'): the parser wraps string constants in a coercion "
-        "node, so only numeric literals pass the literal check. Numeric "
-        "defaults work (see test_alter_table); for text neither ADD COLUMN "
-        "... DEFAULT 'x' nor the workaround the error hint suggests "
-        "(ALTER ... SET DEFAULT 'x') is accepted"
-    ),
-    strict=False,
-)
 async def test_add_column_with_text_default(conn):
+    """String-literal column DEFAULTs: PG's expression deparse decorates
+    string constants with a cast ('x'::text) that DuckLake rejected as a
+    non-literal default (numeric literals deparse bare and always worked);
+    the kernel now deparses plain Const defaults undecorated."""
     await conn.execute("CREATE TABLE t (id int) USING ducklake")
     await conn.execute("INSERT INTO t VALUES (1)")
-    await conn.execute("ALTER TABLE t ADD COLUMN tag text")
-    await conn.execute("ALTER TABLE t ALTER COLUMN tag SET DEFAULT 'x'")
+    await conn.execute("ALTER TABLE t ADD COLUMN tag text DEFAULT 'x'")
+    assert await conn.fetchval("SELECT tag FROM t WHERE id = 1") == "x"
+    await conn.execute("ALTER TABLE t ALTER COLUMN tag SET DEFAULT 'y'")
     await conn.execute("INSERT INTO t (id) VALUES (2)")
-    assert await conn.fetchval("SELECT tag FROM t WHERE id = 2") == "x"
+    rows = await conn.fetch("SELECT id, tag FROM t ORDER BY id")
+    assert [tuple(r) for r in rows] == [(1, "x"), (2, "y")]
 
 
 async def test_drop_and_recreate(conn):
