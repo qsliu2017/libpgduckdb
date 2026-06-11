@@ -144,6 +144,60 @@ async def test_alter_table(conn):
     assert await conn.fetchval("SELECT count(*) FROM t2") == 2
 
 
+async def _id_column_minmax(conn, table="t"):
+    """Table-level min/max recorded for the single 'id' column -- the
+    deterministic, observation-insensitive oracle for the ALTER TYPE
+    stats regressions below (query results alone are cache-sensitive)."""
+    row = await conn.fetchrow(
+        """
+        SELECT cs.min_value, cs.max_value
+        FROM ducklake.ducklake_table_column_stats cs
+        JOIN ducklake.ducklake_table t ON t.table_id = cs.table_id
+        WHERE t.table_name = $1 AND t.end_snapshot IS NULL AND cs.column_id = 1
+        """,
+        table,
+    )
+    return (row["min_value"], row["max_value"])
+
+
+async def test_alter_column_type_preserves_stats(conn):
+    """Regression for an upstream DuckLake client-side-commit defect (fixed
+    by ducklake patch 007 half 1): the per-instance stats cache was keyed
+    without schema_version, so the first insert-commit after ALTER COLUMN
+    ... TYPE seeded its merge from a stale-typed cache entry and nulled the
+    table-level min/max; the next commit rebuilt them from its own file
+    alone, and scans then mis-decoded pre-ALTER rows by +256 through
+    DuckDB's compressed materialization. The pre-ALTER SELECT is
+    load-bearing: it warms the stats cache that triggers the bug."""
+    await conn.execute("CALL ducklake.set_option('data_inlining_row_limit', 0)")
+    await conn.execute("CREATE TABLE t (id int) USING ducklake")
+    await conn.execute("INSERT INTO t VALUES (1)")
+    assert await conn.fetchval("SELECT id FROM t") == 1  # warms the stats cache
+
+    await conn.execute("ALTER TABLE t ALTER COLUMN id TYPE bigint")
+    await conn.execute("INSERT INTO t VALUES (4)")
+    assert await _id_column_minmax(conn) == ("1", "4")
+    await conn.execute("INSERT INTO t VALUES (5)")
+    assert await _id_column_minmax(conn) == ("1", "5")
+    assert [r[0] for r in await conn.fetch("SELECT id FROM t ORDER BY id")] == [1, 4, 5]
+
+
+async def test_alter_column_type_in_txn_preserves_stats(conn):
+    """The intra-transaction variant: ALTER TYPE + INSERT committing
+    together. The commit's stats seed is legitimately read at the txn-start
+    snapshot (pre-ALTER type) while the new file carries the new type, so
+    no cache fix can help; only the merge-side type reconciliation
+    (ducklake patch 007 half 2) keeps the min/max."""
+    await conn.execute("CALL ducklake.set_option('data_inlining_row_limit', 0)")
+    await conn.execute("CREATE TABLE t (id int) USING ducklake")
+    await conn.execute("INSERT INTO t VALUES (1)")
+    async with conn.transaction():
+        await conn.execute("ALTER TABLE t ALTER COLUMN id TYPE bigint")
+        await conn.execute("INSERT INTO t VALUES (4)")
+    assert await _id_column_minmax(conn) == ("1", "4")
+    assert [r[0] for r in await conn.fetch("SELECT id FROM t ORDER BY id")] == [1, 4]
+
+
 async def test_time_travel(conn, lake):
     await conn.execute("CREATE TABLE tt (id int, name text) USING ducklake")
     v0 = await conn.fetchval(
