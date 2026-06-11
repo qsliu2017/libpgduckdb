@@ -685,20 +685,51 @@ DuckdbRuleutils::get_rename_relationdef(Oid relation_oid, RenameStmt *rename_stm
  * ('x'::text), which DuckDB parses as a cast expression -- and DuckLake's
  * ADD COLUMN / SET DEFAULT only accept plain literal defaults, rejecting
  * anything else with "cannot add a column with a non-literal default
- * value". For a bare Const the cast is redundant anyway (cookDefault has
- * already coerced it to the column type), so emit the undecorated literal:
- * bare for numeric types, quoted for everything else (DuckLake casts the
- * string to the column type). Non-Const expressions keep the generic
- * deparse.
+ * value" (an upstream gap: it never constant-folds the parsed default).
+ * For a constant the cast is redundant anyway (cookDefault has already
+ * coerced it to the column type), so emit the undecorated literal:
+ * bare for plain numeric values, quoted for everything else (DuckDB casts
+ * the string back to the column type). Non-constant expressions keep the
+ * generic deparse.
  */
 static char *
 pgddb_deparse_default_expr(Node *expr, List *context) {
-	if (!IsA(expr, Const)) {
+	/* A coerced constant is still a constant: look through binary-
+	 * compatible and domain coercion wrappers (e.g. DEFAULT 'x'::text on a
+	 * varchar column cooks to RelabelType over Const). */
+	Node *node = expr;
+	while (node != NULL) {
+		if (IsA(node, RelabelType)) {
+			node = (Node *)((RelabelType *)node)->arg;
+		} else if (IsA(node, CoerceToDomain)) {
+			node = (Node *)((CoerceToDomain *)node)->arg;
+		} else {
+			break;
+		}
+	}
+	if (node == NULL || !IsA(node, Const)) {
 		return pgddb_deparse_expression(expr, context, false, false);
 	}
-	Const *con = (Const *)expr;
+	Const *con = (Const *)node;
 	if (con->constisnull) {
 		return pstrdup("NULL");
+	}
+	if (con->consttype == BYTEAOID) {
+		/* PG's hex output ('\x68656c6c6f') silently corrupts through
+		 * DuckDB's VARCHAR->BLOB cast, which decodes \xHH PER BYTE. Emit
+		 * the per-byte form ('\x68\x65...') instead; DuckDB's standard
+		 * strings keep backslashes literal, so no E'' prefix is needed. */
+		bytea *b = DatumGetByteaPP(con->constvalue);
+		const unsigned char *data = (const unsigned char *)VARDATA_ANY(b);
+		int len = VARSIZE_ANY_EXHDR(b);
+		StringInfoData lit;
+		initStringInfo(&lit);
+		appendStringInfoChar(&lit, '\'');
+		for (int i = 0; i < len; i++) {
+			appendStringInfo(&lit, "\\x%02x", data[i]);
+		}
+		appendStringInfoChar(&lit, '\'');
+		return lit.data;
 	}
 	Oid typoutput;
 	bool typisvarlena;
@@ -711,10 +742,16 @@ pgddb_deparse_default_expr(Node *expr, List *context) {
 	case FLOAT4OID:
 	case FLOAT8OID:
 	case NUMERICOID:
-		return raw;
+		/* Special values (NaN, Infinity) must stay quoted: bare they parse
+		 * as column references in DuckDB. Mirrors PG's get_const_expr. */
+		if (strspn(raw, "0123456789+-.eE") == strlen(raw)) {
+			return raw;
+		}
+		break;
 	default:
-		return quote_literal_cstr(raw);
+		break;
 	}
+	return quote_literal_cstr(raw);
 }
 
 /*

@@ -405,6 +405,36 @@ async def test_add_column_with_text_default(conn):
     assert [tuple(r) for r in rows] == [(1, "x"), (2, "y")]
 
 
+async def test_column_default_literal_edge_cases(conn):
+    """Edge cases of the literal-default deparse: explicitly cast string
+    constants (cook to RelabelType over Const), special float values (bare
+    NaN parses as a column reference in DuckDB), backslash-containing
+    strings (PG emits E'...' escape strings, which DuckDB accepts), and
+    bytea (PG's whole-string hex form would silently decode wrong through
+    DuckDB's per-byte VARCHAR->BLOB cast)."""
+    import math
+
+    await conn.execute("CREATE TABLE t (id int) USING ducklake")
+    await conn.execute("INSERT INTO t VALUES (1)")
+
+    await conn.execute("ALTER TABLE t ADD COLUMN v varchar DEFAULT 'x'::text")
+    assert await conn.fetchval("SELECT v FROM t WHERE id = 1") == "x"
+
+    await conn.execute("ALTER TABLE t ADD COLUMN f float8 DEFAULT 'NaN'")
+    assert math.isnan(await conn.fetchval("SELECT f FROM t WHERE id = 1"))
+
+    await conn.execute(r"ALTER TABLE t ADD COLUMN s text DEFAULT 'a\b'")
+    assert await conn.fetchval("SELECT s FROM t WHERE id = 1") == "a\\b"
+
+    await conn.execute(r"ALTER TABLE t ADD COLUMN bin bytea DEFAULT '\x68656c6c6f'")
+    assert await conn.fetchval("SELECT bin FROM t WHERE id = 1") == b"hello"
+
+    # new rows pick up the same defaults through PG's own expansion
+    await conn.execute("INSERT INTO t (id) VALUES (2)")
+    row = await conn.fetchrow("SELECT v, s, bin FROM t WHERE id = 2")
+    assert tuple(row) == ("x", "a\\b", b"hello")
+
+
 async def test_drop_and_recreate(conn):
     await conn.execute("CREATE TABLE t (id int) USING ducklake")
     await conn.execute("INSERT INTO t VALUES (1)")
