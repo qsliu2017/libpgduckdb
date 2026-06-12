@@ -1,8 +1,5 @@
 #pragma once
 
-/* duckdb_manager.hpp -- pg_ducklake DuckDBManager subclass and DuckLake
- * catalog lifecycle helpers. */
-
 #include "pgddb/pgddb_duckdb.hpp"
 
 #include <exception>

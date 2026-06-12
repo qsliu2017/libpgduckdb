@@ -1,8 +1,5 @@
 #pragma once
 
-/* sorted_by.hpp -- ducklake_sorted index AM: CREATE/DROP INDEX interception
- * and pg_class sync helpers. */
-
 #include "pgducklake/catalog_sync.hpp"
 
 #include <string>

@@ -1,13 +1,8 @@
 /*
  * sorted_by.cpp -- ducklake_sorted index AM, procedures, and sync.
  *
- * @scope extension: ducklake_sorted index AM, procs ducklake.set_sort
- *   and ducklake.reset_sort
- * @scope backend: sort_synced_from_pg guard bool
- * @scope duckdb-instance: sync sorted indexes between DuckDB and pg_class.
- *   SyncSortKeys is registered as a sync handler with catalog_sync.cpp.
- *
- * The index AM stores no data and is never used by the planner; it exists
+ * Ducklake sorted_by is exposed to Postgres as an index AM.
+ * The index AM stores no data and is never used by the planner. it exists
  * only as a pg_class marker that the utility hook translates into
  * ALTER TABLE ... SET SORTED BY in DuckDB.
  */

@@ -1,11 +1,5 @@
 #pragma once
 
-/*
- * direct_insert.hpp -- Direct insert into inlined DuckLake tables, bypassing
- * DuckDB, for INSERT ... SELECT UNNEST($n) and INSERT ... VALUES (consts)
- * when ducklake.enable_direct_insert = true.
- */
-
 #include "pgddb/pg/declarations.hpp"
 
 namespace pgducklake {

@@ -1,10 +1,5 @@
 #pragma once
 
-/*
- * functions.hpp -- Wrapper macros in DuckDB's system.main catalog bridging PG
- * function names to ducklake_<name>(catalog, ...) globals.
- */
-
 #include "pgddb/pg/declarations.hpp"
 
 namespace duckdb {

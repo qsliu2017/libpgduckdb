@@ -1,7 +1,5 @@
 /*
  * hooks.cpp -- Planner and utility hooks.
- *
- * @scope backend: install planner and utility hooks
  */
 
 #include "pgducklake/constants.hpp"

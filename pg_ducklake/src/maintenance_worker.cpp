@@ -1,8 +1,6 @@
 /*
  * maintenance_worker.cpp -- Background maintenance worker for DuckLake.
  *
- * @scope backend: register shmem hooks and launcher background worker
- *
  * Autovacuum-style launcher/worker: the launcher scans pg_database and
  * spawns a short-lived worker per database, which runs in-process
  * maintenance (flush, expire) then compaction (rewrite, merge, cleanup).

@@ -1,11 +1,6 @@
 /*
  * ducklake_fdw.cpp -- Foreign Data Wrapper for DuckLake tables
  *
- * @scope extension: ducklake_fdw handler and validator
- * @scope backend: register external table check, relation name callback,
- *   FDW utility hook; cached FDW OID
- * @scope duckdb-instance: attach DuckLake databases for FDW queries
- *
  * Two modes: regular (PostgreSQL-backed metadata, full DML) and frozen
  * (static .ducklake snapshot over HTTP, read-only). Queries never run
  * through the FDW scan callbacks: the planner routes them whole to DuckDB.

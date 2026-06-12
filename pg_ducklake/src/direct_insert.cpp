@@ -1,13 +1,12 @@
 /*
  * direct_insert.cpp
  *
- * @scope backend: register custom scan node methods + direct-insert outcome
- *   counters shmem; cached ducklake AM OID
- * @scope duckdb-instance: per-statement scan state (snapshot, row IDs)
- *
- * Planner-time detection of INSERT ... SELECT UNNEST($n) and INSERT ...
- * VALUES patterns that bypass DuckDB and write straight into the inlined
- * data table (SPI for UNNEST, table_multi_insert for VALUES).
+ * Planner-time detection of patterns that bypass DuckDB and
+ * write straight into the inlined data table.
+ * 
+ * Current supported patterns:
+ * - INSERT ... SELECT UNNEST($n) with list shaped params
+ * - INSERT ... VALUES <const value tuples>
  */
 
 #include "pgducklake/catalog_sync.hpp"

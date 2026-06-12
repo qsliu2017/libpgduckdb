@@ -1,10 +1,10 @@
 /*
- * ducklake_table.cpp -- Table lifecycle: AM handler + DDL event triggers.
+ * ducklake_table.cpp -- Ducklake table in Postgres interface
  *
- * @scope extension: ducklake table AM handler, DDL event triggers
- *   (ducklake_create_table_trigger, ducklake_drop_table_trigger,
- *   ducklake_alter_table_trigger, ducklake_comment_trigger), EnsureDuckLakeTable
- * @scope duckdb-instance: SyncNewTables, SyncDroppedTables (snapshot sync)
+ * - Dummy table AM handler
+ * - DDL handlers that deparse commands to DuckDB execution
+ * - Snapshot sync routines that capture changes of ducklake metadata
+ * tabke and notify DuckDB
  */
 
 #include "pgducklake/catalog_sync.hpp"

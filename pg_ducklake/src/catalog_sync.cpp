@@ -1,8 +1,5 @@
 /*
  * catalog_sync.cpp -- Reverse sync framework: DuckDB metadata -> PG catalog.
- *
- * @scope backend: syncing_from_metadata guard bool
- * @scope duckdb-instance: ducklake_snapshot_trigger
  */
 
 #include "pgducklake/catalog_sync.hpp"

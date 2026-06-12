@@ -1,7 +1,5 @@
 #pragma once
 
-/* ducklake_table.hpp -- Table lifecycle: AM handler, DDL triggers, sync. */
-
 #include "pgddb/pg/declarations.hpp"
 
 extern "C" {
