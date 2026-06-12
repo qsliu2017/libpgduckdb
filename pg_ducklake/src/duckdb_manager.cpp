@@ -54,10 +54,6 @@
 #include <duckdb/transaction/transaction_context.hpp>
 #include <ducklake_extension.hpp>
 
-// cpp_wrapper.hpp pulls postgres.h, so it sits between the DuckDB headers
-// and the extern "C" PostgreSQL block.
-#include "pgddb/utility/cpp_wrapper.hpp"
-
 extern "C" {
 #include "postgres.h"
 
@@ -74,6 +70,8 @@ extern "C" {
 
 #include "pgddb/pgddb_ruleutils.h"
 }
+
+#include "pgddb/utility/cpp_wrapper.hpp"
 
 void
 ducklake_detach_catalog() {

@@ -11208,29 +11208,9 @@ get_const_expr(Const *constval, deparse_context *context, int showtype)
 				appendStringInfoString(buf, "false");
 			break;
 
-		case BYTEAOID:
-
-			/*
-			 * PG renders bytea as one whole-string hex literal
-			 * ('\x68656c6c6f'), but DuckDB's VARCHAR->BLOB cast decodes
-			 * \xHH escapes per byte, silently corrupting the value. Emit
-			 * the per-byte form DuckDB expects; the ::bytea label appended
-			 * below is fine (bytea is a BLOB alias in DuckDB).
-			 */
-			{
-				bytea	   *vlena = DatumGetByteaPP(constval->constvalue);
-				const unsigned char *vdata = (const unsigned char *) VARDATA_ANY(vlena);
-				int			vlen = VARSIZE_ANY_EXHDR(vlena);
-
-				appendStringInfoChar(buf, '\'');
-				for (int vi = 0; vi < vlen; vi++)
-					appendStringInfo(buf, "\\x%02x", vdata[vi]);
-				appendStringInfoChar(buf, '\'');
-			}
-			break;
-
 		default:
-			simple_quote_literal(buf, extval);
+			if (!pgddb_deparse_const_literal(constval, buf))
+				simple_quote_literal(buf, extval);
 			break;
 	}
 
