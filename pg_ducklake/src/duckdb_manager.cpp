@@ -278,6 +278,14 @@ InitRuleutilsHooks() {
  */
 static void
 DuckLakeXactCallback_Cpp(XactEvent event) {
+	if (event == XACT_EVENT_ABORT || event == XACT_EVENT_PARALLEL_ABORT) {
+		// The gate is normally reset by SPIExecuteInSubtransaction itself,
+		// but an error escaping between SetAllowSubtransaction(true) and
+		// that reset (e.g. BeginInternalSubTransaction ereporting) would
+		// leave it open and silently disable the SAVEPOINT guard. Every
+		// such escape ends in a transaction abort, so close it here.
+		SetAllowSubtransaction(false);
+	}
 	if (!pgducklake::DuckDBManager::IsInitialized()) {
 		return;
 	}
