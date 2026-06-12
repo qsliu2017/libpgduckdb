@@ -3,7 +3,7 @@
  *
  * Planner-time detection of patterns that bypass DuckDB and
  * write straight into the inlined data table.
- * 
+ *
  * Current supported patterns:
  * - INSERT ... SELECT UNNEST($n) with list shaped params
  * - INSERT ... VALUES <const value tuples>
