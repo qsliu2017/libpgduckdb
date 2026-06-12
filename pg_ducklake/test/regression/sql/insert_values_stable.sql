@@ -1,10 +1,6 @@
--- Test direct-insert VALUES path with STABLE coercions / functions.
--- Before the deferred-evaluation refactor, eval_const_expressions
--- only folded IMMUTABLE function calls, so any STABLE coercion
--- (timestamptz->timestamp, current_date+1, etc.) would fall back to
--- the standard DuckDB executor.  After the refactor, cell expressions
--- are evaluated at executor start instead of demanding a planning-
--- time Const.
+-- Direct-insert VALUES path with STABLE coercions / functions
+-- (timestamptz->timestamp, current_date+1, ...): cell expressions are
+-- evaluated at executor start instead of demanding a planning-time Const.
 
 SET TIMEZONE = 'UTC';
 CALL ducklake.set_option('data_inlining_row_limit', 100);
@@ -58,12 +54,9 @@ SELECT n,
 FROM ivs WHERE n IS NOT NULL ORDER BY n;
 
 -- ============================================================
--- Test 5: VOLATILE function inside VALUES is rejected.  random()
--- is VOLATILE; the planner falls back to the pg_duckdb path, which
--- is observable as an unmatched counter bump.  We use EXPLAIN so
--- the test does not depend on the fall-back path executing
--- successfully (and on it not interacting with subsequent tests'
--- ducklake metadata state).
+-- Test 5: VOLATILE function (random()) in VALUES falls back to the
+-- pg_duckdb path, observable as an unmatched counter bump.  EXPLAIN-only
+-- so the fallback never executes and can't disturb ducklake metadata.
 -- ============================================================
 SELECT ducklake.reset_direct_insert_stats();
 EXPLAIN INSERT INTO ivs VALUES (NULL, NULL, (random() * 100)::int);
@@ -73,10 +66,7 @@ SELECT pattern, reason, count
 
 -- ============================================================
 -- Test 6: INSERT ... SELECT FROM <table> with constant target list
--- must NOT direct-insert (FROM clause means N rows, not 1).  Before
--- the guard added in this PR, the deferred-eval walker accepted the
--- constant target list and would have inserted exactly one row.
--- Same EXPLAIN-only verification.
+-- must NOT direct-insert (FROM clause means N rows, not 1).
 -- ============================================================
 CREATE TABLE ivs_src (i int);
 
@@ -86,7 +76,6 @@ SELECT pattern, reason, count
     FROM ducklake.direct_insert_stats() WHERE count > 0
     ORDER BY pattern, reason;
 
--- Cleanup
 DROP TABLE ivs_src;
 DROP TABLE ivs;
 RESET TIMEZONE;

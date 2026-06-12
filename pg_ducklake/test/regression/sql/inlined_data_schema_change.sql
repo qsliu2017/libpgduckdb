@@ -1,11 +1,6 @@
--- Regression test for GitHub issue #111:
--- Data inconsistency when schema change (DDL) applied to table with inlined data.
---
--- When a fresh DuckDB instance loads a DuckLake catalog containing inlined
--- data written across multiple schema versions, it must read columns from
--- older schema versions correctly. The root cause was GetBeginSnapshotForTable
--- returning the table creation snapshot instead of the schema-version-specific
--- snapshot, which excluded columns added after table creation.
+-- Regression for GitHub issue #111: a fresh DuckDB instance loading inlined
+-- data written across multiple schema versions must read older-version columns
+-- correctly (GetBeginSnapshotForTable used the table-creation snapshot).
 
 -- Enable data inlining so inserts stay in metadata tables
 CALL ducklake.set_option('data_inlining_row_limit', 1000);

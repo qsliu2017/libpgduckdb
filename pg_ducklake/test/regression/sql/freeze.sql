@@ -3,7 +3,6 @@
 -- Disable data inlining so we get actual Parquet files
 CALL ducklake.set_option('data_inlining_row_limit', 0);
 
--- Setup: create a table with data
 CREATE TABLE freeze_test (id int, name text) USING ducklake;
 INSERT INTO freeze_test VALUES (1, 'Alice'), (2, 'Bob');
 SELECT * FROM freeze_test ORDER BY id;

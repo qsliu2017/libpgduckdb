@@ -13,7 +13,6 @@ INSERT INTO vacuum_noop VALUES (3, 'three');
 
 SELECT * FROM vacuum_noop ORDER BY a;
 
--- VACUUM should silently succeed (no-op)
 VACUUM vacuum_noop;
 VACUUM VERBOSE vacuum_noop;
 

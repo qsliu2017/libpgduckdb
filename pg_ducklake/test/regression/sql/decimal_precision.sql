@@ -6,7 +6,6 @@ CREATE TABLE t_decimal_wide (usd decimal(31, 3)) USING ducklake;
 -- Insert a large value that overflows DECIMAL(18,3) but fits DECIMAL(31,3)
 INSERT INTO t_decimal_wide VALUES (1.7820000000000002e+16);
 
--- Insert normal values
 INSERT INTO t_decimal_wide VALUES (12345.678);
 INSERT INTO t_decimal_wide VALUES (0.001);
 INSERT INTO t_decimal_wide VALUES (-99999999999999.999);

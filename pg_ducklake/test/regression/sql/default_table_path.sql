@@ -10,7 +10,6 @@ SET ducklake.default_table_path = '/tmp/ducklake_test_custom_path';
 CREATE TABLE dtp_test (id int, val text) USING ducklake;
 INSERT INTO dtp_test VALUES (1, 'one'), (2, 'two');
 
--- Verify data is readable
 SELECT * FROM dtp_test ORDER BY id;
 
 -- Verify files are under the custom path

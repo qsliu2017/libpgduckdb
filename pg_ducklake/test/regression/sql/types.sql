@@ -1,11 +1,6 @@
--- Test data type handling in inlined data tables.
--- Verifies the three type categories:
---   1. Native: inlined as-is (same PG type in inlined table)
---   2. Not native: ducklake query returns normal values; inlined table uses different PG type
---   3. No inline: VARIANT (see variant.sql) / GEOMETRY -- no data inlining.
---      GEOMETRY has no PG equivalent type and cannot be tested through PG DDL.
---
--- See docs/data_types.md for the full type mapping.
+-- Inlined-data type categories: native types keep their PG type in the
+-- inlined table; not-native types use a different PG type; VARIANT (see
+-- variant.sql) and GEOMETRY never inline.  Full mapping: docs/data_types.md.
 
 CALL ducklake.set_option('data_inlining_row_limit', 100);
 
@@ -26,10 +21,9 @@ CREATE TABLE types_native (
     u UUID
 ) USING ducklake;
 
--- Note: DuckLake serializes INTERVAL to the inlined table as
--- '%d months %d days %lld microseconds'.  PG14's interval parser uses a
--- 32-bit intermediate, so the microsecond field must stay below INT32_MAX
--- (~35 minutes).  Use a value within that range here.
+-- DuckLake serializes INTERVAL as '%d months %d days %lld microseconds';
+-- PG14's interval parser uses a 32-bit intermediate, so the microsecond
+-- field must stay below INT32_MAX (~35 minutes).
 INSERT INTO types_native VALUES (
     true, 1, 2, 3, 1.5, 2.5,
     '12:30:00', '12:30:00+05:30', '1 day 30 minutes',
@@ -39,7 +33,6 @@ INSERT INTO types_native VALUES (
 -- Query via ducklake -- should return normal values
 SELECT * FROM types_native;
 
--- Get inlined table name
 SELECT table_name AS inlined_table_name
 FROM ducklake.ducklake_inlined_data_tables
 WHERE table_id = (SELECT table_id FROM ducklake.ducklake_table WHERE table_name = 'types_native')
@@ -58,20 +51,9 @@ SELECT b, i2, i4, i8, f4, f8, t, ttz, iv, u FROM ducklake.:inlined_table_name OR
 DROP TABLE types_native;
 
 ------------------------------------------------------------
--- Test 2: Not-native types differ in inlined table
---
--- Covers all non-native primitive types expressible via PG DDL:
---   VARCHAR (TEXT)             -> BYTEA
---   DATE                      -> character varying
---   TIMESTAMP                 -> character varying
---   TIMESTAMP WITH TIME ZONE  -> character varying
---
--- BLOB (BYTEA) is not native but has a pre-existing read-back bug:
--- the SPI converter maps BYTEAOID to VARCHAR (text), so DuckDB gets
--- raw bytes instead of hex-encoded BLOB text and fails conversion.
---
--- Not testable via PG DDL (no PG equivalent type):
---   UBIGINT, HUGEINT, UHUGEINT, TIMESTAMP_S, TIMESTAMP_MS, TIMESTAMP_NS
+-- Test 2: Not-native types (TEXT, DATE, TIMESTAMP[TZ]) use a different PG
+-- type in the inlined table.  BYTEA is skipped: the SPI converter maps
+-- BYTEAOID to VARCHAR, so BLOB read-back fails (pre-existing bug).
 ------------------------------------------------------------
 
 CREATE TABLE types_not_native (
@@ -89,7 +71,6 @@ INSERT INTO types_not_native VALUES (
 -- Query via ducklake -- should return normal human-readable values
 SELECT * FROM types_not_native;
 
--- Get inlined table name
 SELECT table_name AS inlined_table_name
 FROM ducklake.ducklake_inlined_data_tables
 WHERE table_id = (SELECT table_id FROM ducklake.ducklake_table WHERE table_name = 'types_not_native')
@@ -110,5 +91,4 @@ FROM ducklake.:inlined_table_name ORDER BY row_id;
 
 DROP TABLE types_not_native;
 
--- Cleanup
 CALL ducklake.set_option('data_inlining_row_limit', 0);

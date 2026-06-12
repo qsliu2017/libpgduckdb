@@ -1,9 +1,9 @@
--- Test metadata sync: DuckDB→PG catalog synchronization.
+-- Test metadata sync: DuckDB->PG catalog synchronization.
 -- Simulates an external DuckDB client by directly inserting into metadata tables.
 -- Each simulated operation is wrapped in a transaction, as a real DuckDB client would.
 
 -- ============================================================
--- 0. Non-regression: PG→DuckDB DDL path still works
+-- 0. Non-regression: PG->DuckDB DDL path still works
 --    (must run BEFORE direct metadata inserts corrupt DuckDB state)
 -- ============================================================
 CREATE TABLE regular_dl (x int) USING ducklake;
@@ -45,7 +45,7 @@ VALUES
   (:cur_cat_id + 2, :cur_snap + 1, NULL, :cur_cat_id, 1,
    'name', 'varchar', NULL, NULL, false, NULL);
 
--- Snapshot insert fires the trigger → should create pg_class entry
+-- Snapshot insert fires the trigger -> should create pg_class entry
 INSERT INTO ducklake.ducklake_snapshot
   (snapshot_id, snapshot_time, schema_version, next_catalog_id, next_file_id)
 VALUES
@@ -81,7 +81,7 @@ COMMIT;
 SELECT count(*) FROM pg_class WHERE relname = 'ext_table';
 
 -- ============================================================
--- 3. Type mapping: DuckLake-specific types → PG types
+-- 3. Type mapping: DuckLake-specific types -> PG types
 -- ============================================================
 BEGIN;
 
@@ -113,7 +113,7 @@ VALUES
 
 COMMIT;
 
--- Verify type mapping: float32→real, float64→double precision, blob→bytea, int128→numeric
+-- Verify type mapping: float32->real, float64->double precision, blob->bytea, int128->numeric
 SELECT attname, format_type(atttypid, atttypmod)
 FROM pg_attribute
 WHERE attrelid = 'typed_table'::regclass AND attnum > 0
@@ -233,7 +233,7 @@ WHERE attrelid = 'empty_table'::regclass AND attnum > 0;
 -- ============================================================
 BEGIN;
 
--- ext_table was already dropped in test 4 — dropping again should be harmless
+-- ext_table was already dropped in test 4 -- dropping again should be harmless
 UPDATE ducklake.ducklake_table
 SET end_snapshot = :cur_snap + 8
 WHERE table_name = 'ext_table' AND end_snapshot = :cur_snap + 4;

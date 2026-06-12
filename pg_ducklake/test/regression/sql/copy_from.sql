@@ -1,14 +1,7 @@
--- Test COPY FROM STDIN for ducklake tables with inlined data.
---
--- COPY FROM file (Parquet/CSV) is handled by pg_duckdb and tested
--- separately. This file covers the COPY FROM STDIN path that
+-- COPY FROM STDIN for ducklake tables with inlined data. COPY FROM file
+-- (Parquet/CSV) goes through pg_duckdb and is tested separately; STDIN
 -- bypasses DuckDB and inserts directly into the inlined data table.
 
--- =============================================================
--- COPY FROM STDIN: inlined ducklake table
--- =============================================================
-
--- Create a table and ensure inlined data table exists
 CREATE TABLE copy_stdin (id int, name text, val double precision) USING ducklake;
 
 SELECT count(*) FROM ducklake.ensure_inlined_data_table('copy_stdin'::regclass);

@@ -13,12 +13,10 @@ INSERT INTO ifs_logs VALUES ('2024-01-01 00:00:00', 'start');
 CREATE TABLE ifs_variant (id int, v ducklake.variant) USING ducklake;
 INSERT INTO ifs_variant VALUES (1, '{"name": "alice"}'), (2, '[1, 2, 3]');
 
--- Create FDW server
 CREATE SERVER ifs_server
     FOREIGN DATA WRAPPER ducklake_fdw
     OPTIONS (metadata_schema 'ducklake');
 
--- Create target schema for imported tables
 CREATE SCHEMA ifs_target;
 
 -- Basic IMPORT FOREIGN SCHEMA: import all tables from public
@@ -27,7 +25,6 @@ IMPORT FOREIGN SCHEMA public FROM SERVER ifs_server INTO ifs_target;
 -- Verify only user tables are imported (no ducklake metadata tables)
 \d ifs_target.*
 
--- Verify imported tables exist and are queryable
 SELECT * FROM ifs_target.ifs_orders ORDER BY id;
 SELECT * FROM ifs_target.ifs_products ORDER BY id;
 SELECT * FROM ifs_target.ifs_logs;

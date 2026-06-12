@@ -1,6 +1,5 @@
 -- Test snapshot query functions
 
--- Setup: create a table and produce some snapshots
 CREATE TABLE snap_test (id int, val text) USING ducklake;
 INSERT INTO snap_test VALUES (1, 'one');
 INSERT INTO snap_test VALUES (2, 'two');
@@ -15,5 +14,4 @@ SELECT count(*) FROM ducklake.last_committed_snapshot();
 -- catalog snapshots, including those from prior tests that may contain
 -- inlined_data_insert changes (an upstream DuckLake limitation).
 
--- Cleanup
 DROP TABLE snap_test;
