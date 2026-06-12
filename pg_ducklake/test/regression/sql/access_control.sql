@@ -1,6 +1,12 @@
--- Which PG permission checks apply to DuckLake tables, via the extension's
--- predefined roles (ducklake_superuser/writer/reader). pg_duckdb's planner
--- hook sets permInfos = NULL, so most DML checks are bypassed (known gaps).
+-- Test access control for DuckLake tables
+-- Verifies which PostgreSQL permission checks apply to DuckLake tables.
+--
+-- Predefined roles (ducklake_superuser, ducklake_writer, ducklake_reader) are
+-- created by the extension with duckdb_group membership and ducklake metadata
+-- grants. This test creates LOGIN users in those roles and verifies behavior.
+--
+-- Current state: pg_duckdb's planner hook sets permInfos = NULL, so most
+-- DML permission checks are bypassed when queries are routed through DuckDB.
 
 -- Verify predefined roles exist
 SELECT rolname FROM pg_roles
@@ -32,6 +38,7 @@ INSERT INTO acl_test VALUES (1, 'Alice', 'pw1'), (2, 'Bob', 'pw2');
 -- inlined data tables.  Grant manually so later tests are deterministic.
 GRANT ALL ON ALL TABLES IN SCHEMA ducklake TO test_no_access;
 
+-- Grant privileges on test table to predefined roles
 GRANT ALL ON TABLE acl_test TO ducklake_superuser;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE acl_test TO ducklake_writer;
 GRANT SELECT ON TABLE acl_test TO ducklake_reader;

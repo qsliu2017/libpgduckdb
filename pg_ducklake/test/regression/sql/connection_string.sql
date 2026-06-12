@@ -21,6 +21,7 @@ CREATE SERVER cs_loopback
     OPTIONS (connection_string 'dbname=regression',
              metadata_schema 'ducklake');
 
+-- Create foreign table via connection_string server
 CREATE FOREIGN TABLE cs_foreign ()
     SERVER cs_loopback
     OPTIONS (table_name 'cs_source');

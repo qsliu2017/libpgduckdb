@@ -99,6 +99,7 @@ DROP TABLE regular_heap;
 -- ============================================================
 -- 5. Metadata sync: variant column synced from DuckLake metadata
 -- ============================================================
+-- Get current metadata state
 SELECT snapshot_id AS cur_snap, next_catalog_id AS cur_cat_id,
        next_file_id AS cur_file_id, schema_version AS cur_sv
 FROM ducklake.ducklake_snapshot
@@ -145,6 +146,7 @@ ORDER BY attnum;
 -- ============================================================
 DROP TABLE variant_test;
 
+-- Re-query current state for cleanup
 SELECT snapshot_id AS cleanup_snap, next_catalog_id AS cleanup_cat_id,
        next_file_id AS cleanup_file_id, schema_version AS cleanup_sv
 FROM ducklake.ducklake_snapshot

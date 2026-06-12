@@ -7,6 +7,7 @@ SELECT current_setting('server_version_num')::int >= 150000 AS has_merge \gset
 -- Enable row-count display so completion tags are visible.
 \set QUIET off
 
+-- Setup: target and source tables
 CREATE TABLE merge_target (id int, val text, n int) USING ducklake;
 CREATE TABLE merge_source (id int, val text, n int) USING ducklake;
 
@@ -33,6 +34,7 @@ WHEN NOT MATCHED THEN INSERT VALUES (s.id, s.val, s.n);
 
 SELECT * FROM merge_target ORDER BY id;
 
+-- Reset
 DELETE FROM merge_target;
 INSERT INTO merge_target VALUES (1, 'one', 10), (2, 'two', 20), (3, 'three', 30);
 
@@ -44,6 +46,7 @@ WHEN NOT MATCHED THEN INSERT VALUES (s.id, s.val, s.n);
 
 SELECT * FROM merge_target ORDER BY id;
 
+-- Reset
 DELETE FROM merge_target;
 INSERT INTO merge_target VALUES (1, 'one', 10), (2, 'two', 20), (3, 'three', 30);
 
@@ -55,6 +58,7 @@ WHEN NOT MATCHED THEN INSERT VALUES (s.id, s.val, s.n);
 
 SELECT * FROM merge_target ORDER BY id;
 
+-- Reset
 DELETE FROM merge_target;
 INSERT INTO merge_target VALUES (1, 'one', 10), (2, 'two', 20), (3, 'three', 30);
 
@@ -66,6 +70,7 @@ WHEN NOT MATCHED THEN INSERT VALUES (s.id, s.val, s.n);
 
 SELECT * FROM merge_target ORDER BY id;
 
+-- Reset
 DELETE FROM merge_target;
 INSERT INTO merge_target VALUES (1, 'one', 10);
 
@@ -79,6 +84,7 @@ SELECT * FROM merge_target ORDER BY id;
 
 \set QUIET on
 
+-- Cleanup
 DROP TABLE merge_source;
 DROP TABLE merge_target;
 

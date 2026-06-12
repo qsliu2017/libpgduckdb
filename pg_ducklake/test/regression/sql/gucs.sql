@@ -3,6 +3,7 @@ SHOW ducklake.default_table_path;
 SHOW ducklake.vacuum_delete_threshold;
 SHOW ducklake.enable_direct_insert;
 
+-- Test setting GUCs
 SET ducklake.default_table_path = '/tmp/test_path';
 SHOW ducklake.default_table_path;
 RESET ducklake.default_table_path;

@@ -28,9 +28,11 @@ SELECT UNNEST(ARRAY[4, 5]), UNNEST(ARRAY['d', 'e']::text[]);
 
 SELECT * FROM insert_unnest WHERE id > 3 ORDER BY id;
 
+-- Clean up
 DROP TABLE insert_unnest;
 
 -- Test 3: Parameterized UNNEST (direct insert optimization)
+-- Enable optimization and create table with inlining
 SET ducklake.enable_direct_insert = true;
 
 CREATE TABLE insert_unnest_bypass (
@@ -38,12 +40,14 @@ CREATE TABLE insert_unnest_bypass (
     val TEXT
 ) USING ducklake;
 
+-- Enable data inlining for this table
 CALL ducklake.set_option('data_inlining_row_limit', 1000);
 
 -- First insert via normal path to create inlined data table
 INSERT INTO insert_unnest_bypass VALUES (0, 'init');
 SELECT * FROM insert_unnest_bypass ORDER BY id;
 
+-- Check if inlined data table exists
 SELECT COUNT(*) > 0 AS has_inlined_data_table FROM pg_class c
 JOIN pg_namespace n ON c.relnamespace = n.oid
 WHERE n.nspname = 'ducklake' AND c.relname LIKE 'ducklake_inlined_data%'
@@ -75,7 +79,9 @@ SET ducklake.enable_direct_insert = true;
 PREPARE insert_large (int[]) AS
 INSERT INTO insert_unnest_bypass SELECT UNNEST($1), 'batch';
 
+-- Execute with 100 rows
 EXECUTE insert_large((SELECT array_agg(i) FROM generate_series(1000, 1099) i));
 SELECT COUNT(*) FROM insert_unnest_bypass WHERE val = 'batch';
 
+-- Clean up
 DROP TABLE insert_unnest_bypass;

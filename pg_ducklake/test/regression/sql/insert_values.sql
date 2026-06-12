@@ -157,6 +157,7 @@ DROP TABLE iv_ts;
 CREATE TABLE iv_coerce (big bigint, small smallint, txt text) USING ducklake;
 SELECT count(*) FROM ducklake.ensure_inlined_data_table('iv_coerce'::regclass);
 
+-- Integer literal 42 coerced to bigint; 1 coerced to smallint
 INSERT INTO iv_coerce VALUES (42, 1, 'coerced');
 SELECT big, small, txt FROM iv_coerce;
 DROP TABLE iv_coerce;
@@ -209,9 +210,13 @@ SELECT * FROM iv_all_types ORDER BY c_int4 NULLS LAST;
 DROP TABLE iv_all_types;
 
 -- ============================================================
--- Test 15: DDL on table B bumps the global schema_version but must not
--- disable direct insert on table A whose per-table schema is unchanged.
--- Dedicated schema keeps leftovers out of import_foreign_schema tests.
+-- Test 15: DDL on unrelated table must not block direct insert
+-- A DDL on table B bumps the global schema_version in
+-- ducklake_snapshot but must not disable direct insert on
+-- table A whose per-table schema has not changed.
+--
+-- Use a dedicated schema so leftover DuckDB catalog entries
+-- don't leak into import_foreign_schema tests.
 -- ============================================================
 CREATE SCHEMA iv_schema;
 SET search_path = iv_schema;
@@ -239,8 +244,10 @@ DROP TABLE iv_target;
 
 -- ============================================================
 -- Test 16: DDL on the SAME table must NOT disable direct insert.
--- pg_ducklake plans against MAX(idt.schema_version) (issue #197), so
--- EXPLAIN must still show the DuckLakeDirectInsert plan after the ALTER.
+-- DuckLake creates a new ducklake_inlined_data_tables row at the
+-- bumped schema_version, and pg_ducklake now plans against
+-- MAX(idt.schema_version) (issue #197).  EXPLAIN must still show
+-- the DuckLakeDirectInsert plan after the ALTER.
 -- ============================================================
 CREATE TABLE iv_self (id int, val text) USING ducklake;
 SELECT count(*) FROM ducklake.ensure_inlined_data_table('iv_self'::regclass);
@@ -249,6 +256,7 @@ SELECT count(*) FROM ducklake.ensure_inlined_data_table('iv_self'::regclass);
 EXPLAIN INSERT INTO iv_self VALUES (1, 'before');
 INSERT INTO iv_self VALUES (1, 'before');
 
+-- ALTER the same table
 ALTER TABLE iv_self ADD COLUMN extra int;
 
 -- Direct insert is still used after ALTER (writes go to the new
@@ -262,14 +270,18 @@ SELECT id, val, extra FROM iv_self ORDER BY id;
 DROP TABLE iv_self;
 
 -- ============================================================
--- Test 17: Direct insert must not rewind the global
--- ducklake_snapshot.schema_version, which would hide later-created tables
--- (regression #182: sibling SELECT failed after a direct insert).
+-- Test 17: Direct insert must preserve the global catalog view
+-- ducklake_snapshot.schema_version is global: setting it to a
+-- per-table value would roll back the catalog and hide tables
+-- created after the direct-insert target.  Regression test for
+-- #182 where a later SELECT on a sibling table failed with
+-- "Table with name X does not exist" after a direct insert.
 -- ============================================================
 CREATE TABLE iv_first (id int) USING ducklake;
 CREATE TABLE iv_second (id int) USING ducklake;
 SELECT count(*) FROM ducklake.ensure_inlined_data_table('iv_first'::regclass);
 
+-- Direct insert into iv_first -- must not rewind the global schema_version
 INSERT INTO iv_first VALUES (1);
 
 -- iv_second was created after iv_first; a rolled-back snapshot would hide it
@@ -278,5 +290,6 @@ SELECT count(*) FROM iv_second;
 DROP TABLE iv_first;
 DROP TABLE iv_second;
 
+-- Cleanup dedicated schema
 RESET search_path;
 DROP SCHEMA iv_schema;

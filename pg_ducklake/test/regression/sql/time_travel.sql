@@ -1,3 +1,4 @@
+-- Setup: create table and make multiple versions
 CREATE TABLE tt (id int, name text) USING ducklake;
 SELECT max(snapshot_id) AS v0 FROM ducklake.ducklake_snapshot \gset
 INSERT INTO tt VALUES (1, 'Alice');
@@ -45,5 +46,6 @@ SELECT * FROM ducklake.time_travel('tt', 999999);
 CREATE VIEW tt_v_bad AS SELECT * FROM ducklake.time_travel('tt', 999999);
 SELECT * FROM tt_v_bad;
 
+-- Cleanup
 DROP VIEW tt_v1, tt_v2, tt_v_latest;
 DROP TABLE tt;

@@ -1,5 +1,7 @@
--- set_option('data_inlining_row_limit'): inserts with fewer rows than the
--- limit are stored inline in the metadata catalog instead of Parquet files.
+-- Test ducklake.set_option('data_inlining_row_limit', ...)
+-- This option controls the row limit for data inlining in DuckLake.
+-- Inserts with fewer rows than the limit are stored inline in the metadata catalog
+-- instead of creating Parquet files.
 
 -- Ensure inlining is disabled at the start (may be non-zero from upstream default)
 CALL ducklake.set_option('data_inlining_row_limit', 0);
@@ -8,6 +10,7 @@ CALL ducklake.set_option('data_inlining_row_limit', 0);
 CREATE TABLE test_no_inlining (i INT, j VARCHAR) USING ducklake;
 INSERT INTO test_no_inlining VALUES (1, 'one'), (2, 'two');
 
+-- Verify data is readable
 SELECT * FROM test_no_inlining ORDER BY i;
 
 -- Check inlined data table metadata entry exists (DuckDB always creates one)
@@ -23,6 +26,7 @@ CALL ducklake.set_option('data_inlining_row_limit', 100);
 CREATE TABLE test_inlining (i INT, j VARCHAR) USING ducklake;
 INSERT INTO test_inlining VALUES (1, 'one'), (2, 'two');
 
+-- Verify data is readable
 SELECT * FROM test_inlining ORDER BY i;
 
 -- Check that inlined data table exists for this table

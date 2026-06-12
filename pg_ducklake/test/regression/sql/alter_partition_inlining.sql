@@ -1,6 +1,16 @@
--- Regression for GitHub issue #197: schema-bumping ALTERs (set_partition,
--- ADD COLUMN, ...) must not permanently force INSERTs off the direct-insert
--- path; the inlined table's schema_version names the heap table we write to.
+-- Regression for GitHub issue #197:
+-- ALTER on a DuckLake table that bumps per-table schema_version
+-- (set_partition, ADD COLUMN, ...) must not permanently block direct
+-- insert into the inlined data table.
+--
+-- Pre-fix: GetTableInliningState() compared idt.schema_version against
+-- MAX(ducklake_schema_versions.schema_version) and rejected with
+-- TI_SCHEMA_VERSION_MISMATCH whenever any schema-bumping DDL ran,
+-- forcing every subsequent INSERT into the slow path.
+--
+-- Post-fix: pg_ducklake aligns with DuckLake's own contract -- the
+-- inlined table's schema_version names the heap table we write to,
+-- regardless of ducklake_schema_versions.  Direct insert keeps working.
 
 CALL ducklake.set_option('data_inlining_row_limit', 100);
 
@@ -66,7 +76,8 @@ SELECT 'new' AS which, row_id, a, b FROM ducklake.:"new_inlined" ORDER BY row_id
 DROP TABLE api_part;
 
 -- ------------------------------------------------------------------
--- 2. set_sort -- no schema_version bump; direct insert worked pre-fix (guard only)
+-- 2. set_sort -- DuckLake does NOT bump per-table schema_version,
+--    so direct insert already works pre-fix.  Regression guard only.
 -- ------------------------------------------------------------------
 CREATE TABLE api_sort (a INT, b INT) USING ducklake;
 INSERT INTO api_sort VALUES (1, 1), (2, 2);
@@ -82,7 +93,9 @@ SELECT a, b FROM api_sort ORDER BY a;
 DROP TABLE api_sort;
 
 -- ------------------------------------------------------------------
--- 3. ADD COLUMN -- bumps schema_version; also verify the row lands in the table
+-- 3. ADD COLUMN -- bumps schema_version (same trigger as case 1).
+--    direct_insert_stats.sql already asserts the counter; here we
+--    additionally verify the row makes it into the table.
 -- ------------------------------------------------------------------
 CREATE TABLE api_add (a INT, b INT) USING ducklake;
 INSERT INTO api_add VALUES (1, 1), (2, 2);

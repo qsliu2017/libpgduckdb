@@ -1,5 +1,6 @@
 -- Test list_files and table_info functions
 
+-- Setup
 CALL ducklake.set_option('data_inlining_row_limit', 0);
 CREATE TABLE lf_test (id int, val text) USING ducklake;
 INSERT INTO lf_test VALUES (1, 'one');
@@ -25,5 +26,6 @@ SELECT count(*) >= 0 AS ok FROM ducklake.rewrite_data_files('lf_test'::regclass)
 -- 4. table_info returns rows
 SELECT count(*) > 0 AS has_tables FROM ducklake.table_info();
 
+-- Cleanup
 DROP TABLE lf_test;
 CALL ducklake.set_option('data_inlining_row_limit', 0);

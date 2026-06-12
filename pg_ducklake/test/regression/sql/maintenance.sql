@@ -27,6 +27,7 @@ WHERE dt.table_name = 'maint_flush'
   AND ds.schema_name = 'public'
   AND ddf.end_snapshot IS NULL;
 
+-- Flush inlined data to parquet
 SELECT * FROM ducklake.flush_inlined_data('maint_flush'::regclass);
 
 -- Data files should now exist
@@ -67,6 +68,7 @@ WHERE dt.table_name = 'maint_merge'
   AND ds.schema_name = 'public'
   AND ddf.end_snapshot IS NULL;
 
+-- Merge with regclass
 SELECT * FROM ducklake.merge_adjacent_files('maint_merge'::regclass);
 
 SELECT * FROM maint_merge ORDER BY a;
@@ -119,6 +121,7 @@ WHERE dt.table_name = 'maint_rewrite'
   AND ds.schema_name = 'public'
   AND ddf.end_snapshot IS NULL;
 
+-- Rewrite with regclass
 SELECT * FROM ducklake.rewrite_data_files('maint_rewrite'::regclass);
 
 SELECT count(*) FROM maint_rewrite;
@@ -157,6 +160,7 @@ CREATE TABLE maint_expire (a int) USING ducklake;
 INSERT INTO maint_expire VALUES (1);
 INSERT INTO maint_expire VALUES (2);
 
+-- Expire all eligible snapshots
 SELECT count(*) >= 0 AS ok FROM ducklake.expire_snapshots();
 
 SELECT * FROM maint_expire ORDER BY a;
@@ -191,10 +195,15 @@ SELECT * FROM maint_cleanup_orphan ORDER BY a;
 
 DROP TABLE maint_cleanup_orphan;
 
+-- Restore default
 CALL ducklake.set_option('data_inlining_row_limit', 0);
 
 -- =============================================================
 -- Background maintenance worker smoke test (issue #183)
+--
+-- Verifies the launcher/worker pair can run a full cycle without
+-- crashing. If the worker segfaults, the postmaster terminates all
+-- backends and this test's connection dies with a FATAL error.
 -- =============================================================
 
 CREATE TABLE maint_bgw_smoke (a int) USING ducklake;

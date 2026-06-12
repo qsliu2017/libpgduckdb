@@ -133,8 +133,10 @@ WHERE c.relname = 'sort_alter_idx';
 ALTER TABLE sort_alter DROP COLUMN extra;
 SELECT * FROM ducklake.get_sort('sort_alter'::regclass);
 
--- 19. DROP COLUMN on a sort-key column is rejected by DuckLake (guard added
--- in v1.5-variegata); the pg_class index and sort metadata are left intact.
+-- 19. DROP COLUMN on a sort-key column is rejected by DuckLake (v1.5-variegata
+-- added this guard): the column participates in the table's sort order, so the
+-- ALTER errors out and the pg_class index / sort metadata are left intact.
+-- Reset or change the sort order first to drop such a column.
 ALTER TABLE sort_alter DROP COLUMN val;
 
 SELECT c.relname FROM pg_class c WHERE c.relname = 'sort_alter_idx';
@@ -145,6 +147,7 @@ CREATE TABLE sort_drop_tbl (id int, val int) USING ducklake;
 CREATE INDEX ON sort_drop_tbl USING ducklake_sorted (val);
 DROP TABLE sort_drop_tbl;
 
+-- Cleanup
 DROP TABLE sort_idx_basic;
 DROP INDEX sort_idx_multi_renamed;
 DROP TABLE sort_idx_multi;

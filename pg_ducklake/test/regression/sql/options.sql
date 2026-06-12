@@ -30,5 +30,6 @@ CALL ducklake.set_option('target_file_size', 1048576, 'public'::regnamespace);
 -- 7. Error: schema-scoped option on nonexistent schema
 CALL ducklake.set_option('target_file_size', 1048576, 'nonexistent_schema'::regnamespace);
 
+-- Cleanup
 CALL ducklake.set_option('data_inlining_row_limit', 0);
 DROP TABLE options_test;

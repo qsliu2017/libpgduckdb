@@ -45,6 +45,7 @@ CREATE TABLE part_existing (id int, grp text, val int) USING ducklake;
 INSERT INTO part_existing VALUES (1, 'a', 10), (2, 'b', 20);
 SELECT * FROM part_existing ORDER BY id;
 
+-- Set partition after data already exists
 CALL ducklake.set_partition('part_existing'::regclass, 'grp');
 
 -- Existing data should still be queryable

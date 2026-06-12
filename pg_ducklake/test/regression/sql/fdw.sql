@@ -23,6 +23,7 @@ CREATE FOREIGN TABLE fdw_t ()
     SERVER ducklake_test_server
     OPTIONS (table_name 'fdw_source');
 
+-- SELECT from foreign table
 SELECT * FROM fdw_t ORDER BY id;
 
 -- Aggregation

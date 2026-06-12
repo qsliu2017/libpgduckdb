@@ -30,6 +30,7 @@ CALL ducklake.freeze('/tmp/pg_ducklake_frozen_fdw_test.ducklake');
 
 DROP TABLE frozen_src;
 
+-- Create frozen server
 CREATE SERVER frozen_test
     FOREIGN DATA WRAPPER ducklake_fdw
     OPTIONS (frozen_url '/tmp/pg_ducklake_frozen_fdw_test.ducklake');
